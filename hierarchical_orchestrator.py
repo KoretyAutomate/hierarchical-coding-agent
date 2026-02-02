@@ -81,21 +81,34 @@ class HierarchicalOrchestrator:
 
         return result
 
-    def autonomous_workflow(self, user_request: str) -> Dict[str, Any]:
+    def autonomous_workflow(self, user_request: str, interactive: bool = False) -> Dict[str, Any]:
         """
-        Fully autonomous workflow:
+        Fully autonomous workflow with two modes:
+
+        INTERACTIVE MODE (interactive=True):
+        - Works directly with user via terminal
+        - Asks for approval using input()
+        - Completes full workflow in one call
+
+        PROGRAMMATIC MODE (interactive=False):
+        - Returns to caller (Claude Code) at checkpoints
+        - Caller handles approval
+        - Requires continue_after_plan_approval() call
+
+        Workflow:
         1. User provides request
         2. Qwen3 (Lead) creates implementation plan
-        3. User approves plan [CHECKPOINT]
+        3. User approves plan [CHECKPOINT - interactive or return]
         4. Qwen3-Coder implements
         5. Qwen3 reviews implementation
-        6. Claude tests
-        7. User approves results [CHECKPOINT]
+        6. Output verification
+        7. User approves results [CHECKPOINT - interactive or return]
         """
         workflow_log = {
             "user_request": user_request,
             "timestamp": datetime.now().isoformat(),
-            "stages": []
+            "stages": [],
+            "interactive_mode": interactive
         }
 
         print(f"\n{'='*70}")
@@ -146,18 +159,74 @@ Be thorough but concise. Focus on actionable guidance."""
         print(f"\n{plan}\n")
         print("-" * 70)
 
-        # CHECKPOINT 1: Return plan for user approval
-        return {
-            "status": "awaiting_user_approval",
-            "stage": "plan_created",
-            "plan": plan,
-            "workflow_log": workflow_log,
-            "next_action": "User must approve this plan to proceed"
-        }
+        # CHECKPOINT 1: Plan approval
+        if not interactive:
+            # Programmatic mode - return to caller
+            return {
+                "status": "awaiting_user_approval",
+                "stage": "plan_created",
+                "plan": plan,
+                "workflow_log": workflow_log,
+                "next_action": "User must approve this plan to proceed"
+            }
 
-    def continue_after_plan_approval(self, workflow_log: Dict, plan: str) -> Dict[str, Any]:
+        # Interactive mode - ask user directly
+        print(f"\n{'='*70}")
+        print(f"PLAN APPROVAL REQUIRED")
+        print(f"{'='*70}")
+
+        while True:
+            approval = input("\nDo you approve this plan? (yes/no/edit): ").strip().lower()
+
+            if approval in ['yes', 'y']:
+                print("✓ Plan approved! Continuing with implementation...\n")
+                break
+            elif approval in ['no', 'n']:
+                print("✗ Plan rejected. Workflow aborted.")
+                return {
+                    "status": "aborted",
+                    "stage": "plan_rejected",
+                    "plan": plan,
+                    "workflow_log": workflow_log
+                }
+            elif approval == 'edit':
+                print("\nWhat changes would you like to the plan?")
+                changes = input("Changes: ").strip()
+
+                # Ask Qwen3 to revise plan
+                revision_prompt = f"""The user reviewed your plan and requested changes:
+
+Original Plan:
+{plan}
+
+Requested Changes:
+{changes}
+
+Please provide a revised implementation plan addressing these changes."""
+
+                print("\nRevising plan based on your feedback...")
+                plan = self.call_qwen3_lead(revision_prompt, system_prompt)
+
+                workflow_log["stages"].append({
+                    "stage": "plan_revision",
+                    "agent": "qwen3_lead",
+                    "user_feedback": changes,
+                    "output": plan
+                })
+
+                print(f"\n{'-'*70}")
+                print("REVISED PLAN:")
+                print(f"{'-'*70}\n{plan}\n{'-'*70}")
+            else:
+                print("Please enter 'yes', 'no', or 'edit'")
+
+        # Continue to implementation
+        return self._continue_workflow(workflow_log, plan, interactive)
+
+    def _continue_workflow(self, workflow_log: Dict, plan: str, interactive: bool = False) -> Dict[str, Any]:
         """
-        Continue workflow after user approves the plan.
+        Internal method to continue workflow after plan approval.
+        Used by both interactive and programmatic modes.
         """
         print(f"\n{'='*70}")
         print(f"CONTINUING WORKFLOW - Plan Approved")
@@ -259,17 +328,78 @@ Provide your review and decision: APPROVE or REQUEST_CHANGES."""
 
         print("-" * 70)
 
-        # CHECKPOINT 2: Return for user approval
-        return {
-            "status": "awaiting_user_approval",
-            "stage": "implementation_complete",
-            "plan": plan,
-            "implementation": implementation_result,
-            "review": review,
-            "verification": verification_result,
-            "workflow_log": workflow_log,
-            "next_action": "User must review and approve to create PR"
-        }
+        # CHECKPOINT 2: Final approval
+        if not interactive:
+            # Programmatic mode - return to caller
+            return {
+                "status": "awaiting_user_approval",
+                "stage": "implementation_complete",
+                "plan": plan,
+                "implementation": implementation_result,
+                "review": review,
+                "verification": verification_result,
+                "workflow_log": workflow_log,
+                "next_action": "User must review and approve to create PR"
+            }
+
+        # Interactive mode - ask user for final approval
+        print(f"\n{'='*70}")
+        print(f"FINAL APPROVAL REQUIRED")
+        print(f"{'='*70}")
+        print("\nImplementation Summary:")
+        print(f"  Plan: Created and approved")
+        print(f"  Implementation: Completed")
+        print(f"  Review: {review[:100]}..." if len(str(review)) > 100 else f"  Review: {review}")
+        print(f"  Verification: {'PASSED' if verification_result.get('quick_check', {}).get('success') else 'ISSUES DETECTED'}")
+
+        while True:
+            approval = input("\nDo you approve the implementation? (yes/no/retry): ").strip().lower()
+
+            if approval in ['yes', 'y']:
+                print("✓ Implementation approved! Workflow complete.\n")
+
+                # Save workflow log
+                log_file = self.save_workflow_log(workflow_log)
+
+                return {
+                    "status": "completed",
+                    "stage": "approved",
+                    "plan": plan,
+                    "implementation": implementation_result,
+                    "review": review,
+                    "verification": verification_result,
+                    "workflow_log": workflow_log,
+                    "log_file": str(log_file),
+                    "next_action": "Ready to create PR or deploy"
+                }
+            elif approval in ['no', 'n']:
+                print("✗ Implementation rejected. Workflow aborted.")
+                self.save_workflow_log(workflow_log)
+                return {
+                    "status": "aborted",
+                    "stage": "implementation_rejected",
+                    "plan": plan,
+                    "implementation": implementation_result,
+                    "review": review,
+                    "verification": verification_result,
+                    "workflow_log": workflow_log
+                }
+            elif approval == 'retry':
+                print("\nRetrying implementation with same plan...")
+                # Recursive retry - go back to implementation stage
+                return self._continue_workflow(workflow_log, plan, interactive)
+            else:
+                print("Please enter 'yes', 'no', or 'retry'")
+
+    def continue_after_plan_approval(self, workflow_log: Dict, plan: str) -> Dict[str, Any]:
+        """
+        Backward compatibility wrapper for programmatic mode.
+        Continue workflow after plan has been approved externally.
+
+        This method is for programmatic callers (like Claude Code) who handle
+        approval themselves. For interactive mode, use autonomous_workflow(interactive=True).
+        """
+        return self._continue_workflow(workflow_log, plan, interactive=False)
 
     def save_workflow_log(self, workflow_log: Dict):
         """Save workflow log for audit trail."""
@@ -283,32 +413,59 @@ Provide your review and decision: APPROVE or REQUEST_CHANGES."""
 def main():
     """Test the hierarchical orchestrator."""
     import sys
+    import argparse
 
-    if len(sys.argv) < 2:
-        print("Usage: python3 hierarchical_orchestrator.py \"<user request>\"")
-        print("\nExample:")
-        print('  python3 hierarchical_orchestrator.py "Add error handling to the search function"')
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description='Hierarchical Coding Agent Orchestrator',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Programmatic mode (returns at checkpoints for external approval)
+  python3 hierarchical_orchestrator.py "Add error handling to the search function"
 
-    user_request = sys.argv[1]
+  # Interactive mode (asks user directly via terminal)
+  python3 hierarchical_orchestrator.py --interactive "Add error handling to the search function"
+        """
+    )
+    parser.add_argument('request', type=str, help='User request for the coding task')
+    parser.add_argument(
+        '--interactive', '-i',
+        action='store_true',
+        help='Run in interactive mode (ask user for approvals directly)'
+    )
+
+    args = parser.parse_args()
 
     orchestrator = HierarchicalOrchestrator()
 
     # Start autonomous workflow
-    result = orchestrator.autonomous_workflow(user_request)
+    result = orchestrator.autonomous_workflow(args.request, interactive=args.interactive)
 
+    # Display results
     print(f"\n{'='*70}")
-    print(f"WORKFLOW CHECKPOINT")
+    print(f"WORKFLOW RESULT")
     print(f"{'='*70}")
     print(f"Status: {result['status']}")
     print(f"Stage: {result['stage']}")
-    print(f"\nNext: {result['next_action']}")
 
-    # Save workflow log
-    orchestrator.save_workflow_log(result['workflow_log'])
-
-    print("\n✓ Workflow paused for user approval")
-    print("  Approve the plan above to continue to implementation")
+    if result['status'] == 'awaiting_user_approval':
+        # Programmatic mode - paused at checkpoint
+        print(f"\nNext: {result['next_action']}")
+        orchestrator.save_workflow_log(result['workflow_log'])
+        print("\n✓ Workflow paused for user approval")
+        if result['stage'] == 'plan_created':
+            print("  Approve the plan above to continue to implementation")
+        elif result['stage'] == 'implementation_complete':
+            print("  Approve the implementation to create PR")
+    elif result['status'] == 'completed':
+        # Interactive mode - completed
+        print(f"\n✓ Workflow completed successfully!")
+        print(f"  Log file: {result.get('log_file', 'N/A')}")
+        print(f"  Next: {result.get('next_action', 'N/A')}")
+    elif result['status'] == 'aborted':
+        # User rejected at some checkpoint
+        print(f"\n✗ Workflow aborted by user")
+        orchestrator.save_workflow_log(result['workflow_log'])
 
 
 if __name__ == "__main__":

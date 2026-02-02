@@ -11,6 +11,7 @@ An intelligent, autonomous coding agent system that combines human oversight (Cl
 
 - 🏗️ **3-Tier Hierarchical Architecture** - PM → Lead → Developer workflow
 - 🔄 **Autonomous Workflows** - Plan, implement, review, test automatically
+- 🎛️ **Dual Operation Modes** - Programmatic (for Claude Code integration) & Interactive (standalone terminal)
 - ✅ **Output Verification** - Automated testing and file validation
 - 🎨 **Enhanced PR Descriptions** - Auto-generate file references and testing guides
 - 🌐 **Web Interface** - Mobile-friendly task submission and monitoring
@@ -105,18 +106,42 @@ models:
 
 #### Hierarchical Workflow
 
+**Programmatic Mode** (default - for integration with Claude Code):
+
 ```bash
-# Start autonomous workflow
+# Start autonomous workflow (pauses at checkpoints for external approval)
 python3 hierarchical_orchestrator.py "Add error handling to the API"
 
 # The system will:
 # 1. Qwen3 Lead creates implementation plan
-# 2. You review and approve the plan
+# 2. Returns plan for approval (caller handles approval)
+# 3. After approval, continue_after_plan_approval() resumes
+# 4. Qwen3-Coder implements the code
+# 5. Qwen3 Lead reviews implementation
+# 6. Output verification runs automatically
+# 7. Returns results for approval (caller creates PR)
+```
+
+**Interactive Mode** (standalone - asks user directly):
+
+```bash
+# Run in interactive mode (asks for approval via terminal prompts)
+python3 hierarchical_orchestrator.py --interactive "Add error handling to the API"
+
+# OR shorthand:
+python3 hierarchical_orchestrator.py -i "Add error handling to the API"
+
+# The system will:
+# 1. Qwen3 Lead creates implementation plan
+# 2. Asks YOU: "Do you approve this plan? (yes/no/edit)"
 # 3. Qwen3-Coder implements the code
 # 4. Qwen3 Lead reviews implementation
 # 5. Output verification runs automatically
-# 6. You approve and create PR
+# 6. Asks YOU: "Do you approve the implementation? (yes/no/retry)"
+# 7. Completes workflow and saves log
 ```
+
+See [INTERACTIVE_MODE.md](INTERACTIVE_MODE.md) for detailed guide.
 
 #### Task Queue System
 
@@ -275,6 +300,7 @@ See [WEB_INTERFACE_GUIDE.md](WEB_INTERFACE_GUIDE.md) for details.
 
 - [Quick Start Guide](QUICK_START.md) - Get started in 5 minutes
 - [Hierarchical System](HIERARCHICAL_SYSTEM.md) - Architecture deep dive
+- [Interactive Mode Guide](INTERACTIVE_MODE.md) - Programmatic vs Interactive workflows
 - [Usage Guide](USAGE_GUIDE.md) - Detailed usage examples
 - [Output Verifier](OUTPUT_VERIFIER_README.md) - Automated testing
 - [PR Helper](PR_HELPER_README.md) - Enhanced PR descriptions

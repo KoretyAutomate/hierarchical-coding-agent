@@ -1,0 +1,33 @@
+# Coding Agent Configuration
+agent:
+  name: "LocalCodingAgent"
+  model: "Qwen3-Coder-30B-A3B"
+  architecture: "MoE (3B active params)"
+  role: "Senior Software Engineer"
+  capabilities:
+    - code_generation
+    - code_review
+    - testing
+    - debugging
+    - refactoring
+    - agentic_coding
+  memory_limit: "40%"  # DGX Spark stability requirement
+
+llm:
+  model_name: "qwen3-coder"  # Ollama model name
+  base_url: "http://localhost:11434/v1"  # Ollama OpenAI-compatible endpoint
+  api_key: "NA"
+  temperature: 0.2
+  max_tokens: 4096
+  timeout: 300
+  backend: "ollama"  # Using Ollama for GGUF quantization
+  context_length: 32768  # Ollama default
+
+workspace:
+  project_root: "/home/korety/Project/DR_2_Podcast"
+  sandbox_dir: "/tmp/claude-1000/-home-korety/d1afe9ed-f197-46ed-90e6-23e9d26332c3/scratchpad"
+
+orchestration:
+  task_queue_path: "/home/korety/coding-agent/tasks/queue.json"
+  completed_tasks_path: "/home/korety/coding-agent/tasks/completed.json"
+  logs_path: "/home/korety/coding-agent/logs"

@@ -17,6 +17,7 @@ from core.llm import BaseLLM, OllamaAdapter, AnthropicAdapter
 from core.config import get_config, AppConfig
 from core.db import get_db, Task, WorkflowState, TaskStatus
 from core.context_manager import ContextManager
+from core.ide_bridge import IDEBridge
 
 class HierarchicalOrchestrator:
     """
@@ -64,6 +65,9 @@ class HierarchicalOrchestrator:
         # Initialize Context Manager (Cline-like feature)
         self.context_manager = ContextManager(str(self.workspace))
 
+        # Initialize IDE Bridge (Cline-like feature)
+        self.ide_bridge = IDEBridge(str(self.workspace))
+
         # Current task tracking
         self.current_task_id = task_id
 
@@ -73,6 +77,7 @@ class HierarchicalOrchestrator:
         print(f"  Workspace: {self.workspace}")
         print(f"  Database: {self.db.db_path}")
         print(f"  Context Manager: Enabled (Smart Context)")
+        print(f"  IDE Bridge: {'VS Code' if self.ide_bridge.vscode_available else 'Not Available'}")
 
         # Check for resumable tasks if no task_id provided
         if not task_id and self.config.orchestration.enable_resume:
@@ -566,6 +571,10 @@ Provide your review and decision: APPROVE or REQUEST_CHANGES."""
 
         print("-" * 70)
 
+        # VS Code Integration: Offer to view diffs (Phase 3 feature)
+        if interactive and self.ide_bridge.vscode_available:
+            self._offer_vscode_diff_review(implementation_result)
+
         # CHECKPOINT 2: Final approval
         if not interactive:
             # Programmatic mode - return to caller
@@ -783,6 +792,78 @@ Provide your review and decision: APPROVE or REQUEST_CHANGES."""
             print(f"  ⚠ Unknown workflow state: {task.workflow_state}")
             print("  Starting from scratch")
             return self.autonomous_workflow(task.request, interactive=False)
+
+    def _offer_vscode_diff_review(self, implementation_result: Dict):
+        """
+        Offer to view diffs in VS Code (Phase 3 feature).
+
+        Args:
+            implementation_result: Result from the implementation stage
+        """
+        print("\n" + "="*70)
+        print("VS CODE DIFF REVIEW AVAILABLE")
+        print("="*70)
+        print("\n💡 You can view the code changes in VS Code before final approval.")
+
+        while True:
+            response = input("\nOpen diffs in VS Code? (y/n): ").strip().lower()
+
+            if response in ['y', 'yes']:
+                # Try to find changed files from implementation_result
+                # This depends on what the implementation agent returns
+                # For now, we'll check the sandbox directory for temp files
+                from core.diff_engine import DiffEngine
+
+                diff_engine = DiffEngine(str(self.workspace))
+
+                # Look for temp files in sandbox
+                temp_files = list(Path(self.workspace / "sandbox").glob("temp_*.py"))
+
+                if not temp_files:
+                    print("\n⚠️  No pending changes found to review.")
+                    break
+
+                print(f"\nFound {len(temp_files)} file(s) with changes:")
+
+                # Open each diff in VS Code
+                opened_count = 0
+                for temp_file in temp_files:
+                    # Extract original filename from temp filename
+                    # temp_YYYYMMDD_HHMMSS_originalname.py -> originalname.py
+                    parts = temp_file.name.split('_')
+                    if len(parts) >= 4:
+                        original_name = '_'.join(parts[3:])  # Reconstruct original name
+                        original_path = self.workspace / original_name
+
+                        # Check if original exists, if not, use temp as "new file"
+                        if original_path.exists():
+                            success, msg = self.ide_bridge.open_diff_in_vscode(
+                                str(original_path),
+                                str(temp_file)
+                            )
+                        else:
+                            # New file - compare with empty
+                            success, msg = self.ide_bridge.open_diff_in_vscode(
+                                str(temp_file),  # Show as new
+                                str(temp_file)
+                            )
+
+                        print(f"  {msg}")
+                        if success:
+                            opened_count += 1
+
+                if opened_count > 0:
+                    print(f"\n✓ Opened {opened_count} diff(s) in VS Code")
+                else:
+                    print("\n⚠️  No diffs could be opened")
+
+                break
+
+            elif response in ['n', 'no']:
+                print("\n Skipping VS Code diff review.")
+                break
+            else:
+                print("Please enter 'y' or 'n'")
 
     def save_workflow_log(self, workflow_log: Dict):
         """Save workflow log for audit trail."""

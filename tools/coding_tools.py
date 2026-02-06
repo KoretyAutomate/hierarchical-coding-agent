@@ -1,12 +1,13 @@
 """
 Coding tools for the local agent.
-Now with optional Docker sandbox for safe execution.
+Now with optional Docker sandbox for safe execution and diff review.
 """
 import os
 import subprocess
 import json
 from pathlib import Path
 from typing import Optional, Dict, Any
+from core.diff_engine import DiffEngine, DiffResult
 
 
 class CodingTools:
@@ -20,7 +21,8 @@ class CodingTools:
         self,
         workspace_root: str,
         use_sandbox: bool = False,
-        sandbox_config: Optional[Dict[str, Any]] = None
+        sandbox_config: Optional[Dict[str, Any]] = None,
+        enable_diff_review: bool = True
     ):
         """
         Initialize coding tools.
@@ -29,10 +31,15 @@ class CodingTools:
             workspace_root: Root directory of the workspace
             use_sandbox: Whether to use Docker sandbox for execution
             sandbox_config: Optional sandbox configuration
+            enable_diff_review: Whether to enable diff review before file changes
         """
         self.workspace_root = Path(workspace_root)
         self.use_sandbox = use_sandbox
         self.sandbox = None
+        self.enable_diff_review = enable_diff_review
+
+        # Initialize DiffEngine for code review
+        self.diff_engine = DiffEngine(str(self.workspace_root))
 
         # Initialize sandbox if requested
         if use_sandbox:
@@ -60,20 +67,77 @@ class CodingTools:
         except Exception as e:
             return f"Error reading file: {str(e)}"
 
-    def write_file(self, file_path: str, content: str) -> str:
-        """Write content to a file in the workspace"""
-        full_path = self.workspace_root / file_path
-        try:
-            full_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(full_path, 'w', encoding='utf-8') as f:
-                f.write(content)
-            return f"Successfully wrote to {file_path}"
-        except Exception as e:
-            return f"Error writing file: {str(e)}"
+    def write_file(self, file_path: str, content: str, review_mode: bool = None) -> str:
+        """
+        Write content to a file in the workspace.
 
-    def edit_file(self, file_path: str, old_content: str, new_content: str) -> str:
-        """Edit a file by replacing old_content with new_content"""
+        Args:
+            file_path: Path to the file relative to workspace
+            content: Content to write
+            review_mode: If True, generate diff and return for review instead of writing.
+                        If None, uses self.enable_diff_review
+
+        Returns:
+            Success message or diff result
+        """
+        # Determine review mode
+        should_review = review_mode if review_mode is not None else self.enable_diff_review
+
+        if should_review:
+            # Generate diff instead of writing immediately
+            try:
+                diff_result = self.diff_engine.generate_diff(file_path, content)
+
+                # Format diff for display
+                diff_summary = self.diff_engine.format_diff_summary(diff_result)
+
+                # Return diff for user review
+                result = {
+                    "status": "pending_review",
+                    "file_path": file_path,
+                    "diff": diff_summary,
+                    "has_changes": diff_result.has_changes,
+                    "additions": diff_result.additions,
+                    "deletions": diff_result.deletions,
+                    "message": "Changes pending approval. Use approve_changes() to apply or reject_changes() to discard."
+                }
+
+                # Store diff_result for later approval
+                if not hasattr(self, '_pending_diffs'):
+                    self._pending_diffs = {}
+                self._pending_diffs[file_path] = diff_result
+
+                return json.dumps(result, indent=2)
+
+            except Exception as e:
+                return f"Error generating diff: {str(e)}"
+        else:
+            # Write directly without review
+            full_path = self.workspace_root / file_path
+            try:
+                full_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(full_path, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                return f"Successfully wrote to {file_path}"
+            except Exception as e:
+                return f"Error writing file: {str(e)}"
+
+    def edit_file(self, file_path: str, old_content: str, new_content: str, review_mode: bool = None) -> str:
+        """
+        Edit a file by replacing old_content with new_content.
+
+        Args:
+            file_path: Path to the file relative to workspace
+            old_content: Content to replace
+            new_content: Replacement content
+            review_mode: If True, generate diff and return for review instead of editing.
+                        If None, uses self.enable_diff_review
+
+        Returns:
+            Success message or diff result
+        """
         full_path = self.workspace_root / file_path
+
         try:
             with open(full_path, 'r', encoding='utf-8') as f:
                 content = f.read()
@@ -83,12 +147,85 @@ class CodingTools:
 
             new_file_content = content.replace(old_content, new_content, 1)
 
-            with open(full_path, 'w', encoding='utf-8') as f:
-                f.write(new_file_content)
+            # Use write_file with the new content (which handles review_mode)
+            return self.write_file(file_path, new_file_content, review_mode=review_mode)
 
-            return f"Successfully edited {file_path}"
         except Exception as e:
             return f"Error editing file: {str(e)}"
+
+    def approve_changes(self, file_path: str) -> str:
+        """
+        Approve and apply pending changes for a file.
+
+        Args:
+            file_path: Path to the file with pending changes
+
+        Returns:
+            Success or error message
+        """
+        if not hasattr(self, '_pending_diffs') or file_path not in self._pending_diffs:
+            return f"Error: No pending changes found for {file_path}"
+
+        diff_result = self._pending_diffs[file_path]
+
+        try:
+            # Apply the changes
+            if self.diff_engine.apply_changes(diff_result):
+                # Cleanup temp file
+                self.diff_engine.cleanup_temp_file(diff_result)
+
+                # Remove from pending
+                del self._pending_diffs[file_path]
+
+                return f"✓ Changes approved and applied to {file_path}"
+            else:
+                return f"Error: Failed to apply changes to {file_path}"
+
+        except Exception as e:
+            return f"Error approving changes: {str(e)}"
+
+    def reject_changes(self, file_path: str) -> str:
+        """
+        Reject and discard pending changes for a file.
+
+        Args:
+            file_path: Path to the file with pending changes
+
+        Returns:
+            Success or error message
+        """
+        if not hasattr(self, '_pending_diffs') or file_path not in self._pending_diffs:
+            return f"Error: No pending changes found for {file_path}"
+
+        diff_result = self._pending_diffs[file_path]
+
+        try:
+            # Cleanup temp file
+            self.diff_engine.cleanup_temp_file(diff_result)
+
+            # Remove from pending
+            del self._pending_diffs[file_path]
+
+            return f"✗ Changes rejected for {file_path}"
+
+        except Exception as e:
+            return f"Error rejecting changes: {str(e)}"
+
+    def list_pending_changes(self) -> str:
+        """
+        List all files with pending changes.
+
+        Returns:
+            Formatted list of pending changes
+        """
+        if not hasattr(self, '_pending_diffs') or not self._pending_diffs:
+            return "No pending changes"
+
+        lines = ["Pending changes:"]
+        for file_path, diff_result in self._pending_diffs.items():
+            lines.append(f"  - {file_path}: +{diff_result.additions}/-{diff_result.deletions}")
+
+        return "\n".join(lines)
 
     def list_files(self, directory: str = ".") -> str:
         """List files in a directory"""

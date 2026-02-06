@@ -1,8 +1,8 @@
 # Coding Agent Configuration
 agent:
   name: "LocalCodingAgent"
-  model: "Qwen3-Coder-30B-A3B"
-  architecture: "MoE (3B active params)"
+  model: "frob/qwen3-coder-next"
+  architecture: "MoE (80B total, 3B active params)"
   role: "Senior Software Engineer"
   capabilities:
     - code_generation
@@ -14,7 +14,7 @@ agent:
   memory_limit: "40%"  # DGX Spark stability requirement
 
 llm:
-  model_name: "qwen3-coder"  # Ollama model name
+  model_name: "frob/qwen3-coder-next"  # Ollama model name
   base_url: "http://localhost:11434/v1"  # Ollama OpenAI-compatible endpoint
   api_key: "NA"
   temperature: 0.2

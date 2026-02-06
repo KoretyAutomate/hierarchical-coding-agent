@@ -2,48 +2,156 @@
 """
 Hierarchical Agent Orchestrator
 3-Tier System: Claude (PM) → Qwen3 (Lead) → Qwen3-Coder (Member)
+
+Now uses:
+- LLM abstraction layer
+- Centralized configuration
+- Database persistence with resume capability
 """
 import json
-import httpx
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, Optional
-import yaml
 from output_verifier import OutputVerifier
+from core.llm import BaseLLM, OllamaAdapter, AnthropicAdapter
+from core.config import get_config, AppConfig
+from core.db import get_db, Task, WorkflowState, TaskStatus
 
 class HierarchicalOrchestrator:
     """
     Manages the 3-tier agent hierarchy:
     - Project Manager (Claude Code): Coordinates workflow
-    - Project Lead (Qwen3): Makes decisions, reviews plans
-    - Project Member (Qwen3-Coder): Implements code
+    - Project Lead (LLM): Makes decisions, reviews plans
+    - Project Member (LLM): Implements code
+
+    Now supports multiple LLM backends via abstraction layer.
     """
 
-    def __init__(self, config_path: str = "/home/korety/coding-agent/config/agent_config.yaml"):
-        with open(config_path) as f:
-            self.config = yaml.safe_load(f)
+    def __init__(
+        self,
+        lead_llm: Optional[BaseLLM] = None,
+        member_llm: Optional[BaseLLM] = None,
+        config: Optional[AppConfig] = None,
+        task_id: Optional[int] = None
+    ):
+        """
+        Initialize hierarchical orchestrator with LLM adapters and database support.
 
-        # API endpoints (both on Ollama)
-        self.qwen3_lead_url = "http://localhost:11434/v1"  # Project Lead (Qwen3-32B)
-        self.qwen3_coder_url = "http://localhost:11434/v1"  # Project Member (Qwen3-Coder)
+        Args:
+            lead_llm: LLM for Project Lead role (planning, review)
+            member_llm: LLM for Project Member role (implementation)
+            config: Application configuration (loads default if not provided)
+            task_id: Optional task ID for resuming an existing task
+        """
+        # Load configuration
+        self.config = config or get_config()
 
-        # Model names
-        self.qwen3_lead_model = "qwen3:32b"
-        self.qwen3_coder_model = "qwen3-coder:latest"
+        # Initialize database
+        self.db = get_db()
+        if self.config.database.backup_on_start:
+            self.db.backup_database()
+
+        # Initialize LLMs for different roles
+        self.lead_llm = lead_llm or self._create_default_lead_llm()
+        self.member_llm = member_llm or self._create_default_member_llm()
 
         # Paths
-        self.workspace = Path(self.config['workspace']['project_root'])
-        self.logs_dir = Path(self.config['orchestration']['logs_path'])
+        self.workspace = self.config.workspace.project_root
+        self.logs_dir = self.config.workspace.logs_path
         self.logs_dir.mkdir(parents=True, exist_ok=True)
 
+        # Current task tracking
+        self.current_task_id = task_id
+
         print("✓ Hierarchical Orchestrator initialized")
-        print(f"  Project Lead: Qwen3 @ {self.qwen3_lead_url}")
-        print(f"  Project Member: Qwen3-Coder @ {self.qwen3_coder_url}")
+        print(f"  Lead LLM: {self.lead_llm}")
+        print(f"  Member LLM: {self.member_llm}")
         print(f"  Workspace: {self.workspace}")
+        print(f"  Database: {self.db.db_path}")
+
+        # Check for resumable tasks if no task_id provided
+        if not task_id and self.config.orchestration.enable_resume:
+            self._check_resumable_tasks()
+
+    def _create_default_lead_llm(self) -> BaseLLM:
+        """Create default LLM for Project Lead role."""
+        if self.config.llm.provider == "ollama":
+            return OllamaAdapter(
+                model_name=self.config.orchestration.lead_model,
+                base_url=self.config.llm.ollama_base_url,
+                timeout=self.config.llm.ollama_timeout
+            )
+        else:
+            return AnthropicAdapter(
+                model_name=self.config.orchestration.lead_model,
+                api_key=self.config.llm.anthropic_api_key
+            )
+
+    def _create_default_member_llm(self) -> BaseLLM:
+        """Create default LLM for Project Member role."""
+        if self.config.llm.provider == "ollama":
+            return OllamaAdapter(
+                model_name=self.config.orchestration.member_model,
+                base_url=self.config.llm.ollama_base_url,
+                timeout=self.config.llm.ollama_timeout
+            )
+        else:
+            return AnthropicAdapter(
+                model_name=self.config.orchestration.member_model,
+                api_key=self.config.llm.anthropic_api_key
+            )
+
+    def _check_resumable_tasks(self):
+        """Check for tasks that can be resumed."""
+        resumable = self.db.get_resumable_tasks()
+        if resumable:
+            print(f"\n⚠ Found {len(resumable)} resumable task(s):")
+            for task in resumable:
+                print(f"  - Task #{task.id}: {task.request[:60]}...")
+                print(f"    State: {task.workflow_state}")
+                print(f"    Last updated: {task.updated_at}")
+
+    def _save_checkpoint(
+        self,
+        task_id: int,
+        checkpoint_name: str,
+        data: Dict[str, Any]
+    ):
+        """
+        Save a workflow checkpoint.
+
+        Args:
+            task_id: Task ID
+            checkpoint_name: Checkpoint identifier
+            data: Data to save
+        """
+        self.db.save_checkpoint(task_id, checkpoint_name, data)
+        print(f"  💾 Checkpoint saved: {checkpoint_name}")
+
+    def _update_workflow_state(
+        self,
+        task_id: int,
+        workflow_state: WorkflowState,
+        **updates
+    ):
+        """
+        Update task workflow state and related fields.
+
+        Args:
+            task_id: Task ID
+            workflow_state: New workflow state
+            **updates: Additional fields to update
+        """
+        self.db.update_task(
+            task_id,
+            workflow_state=workflow_state.value,
+            **updates
+        )
 
     def call_qwen3_lead(self, prompt: str, system_prompt: str = None) -> str:
         """
-        Call Qwen3 (Project Lead) for decision-making and planning.
+        Call Project Lead LLM for decision-making and planning.
+        Now uses LLM abstraction layer.
         """
         messages = []
         if system_prompt:
@@ -51,39 +159,55 @@ class HierarchicalOrchestrator:
         messages.append({"role": "user", "content": prompt})
 
         try:
-            response = httpx.post(
-                f"{self.qwen3_lead_url}/chat/completions",
-                json={
-                    "model": self.qwen3_lead_model,
-                    "messages": messages,
-                    "temperature": 0.3,
-                    "max_tokens": 4096
-                },
-                timeout=120.0
+            response = self.lead_llm.generate(
+                messages=messages,
+                temperature=self.config.llm.temperature,
+                max_tokens=self.config.llm.max_tokens
             )
-            response.raise_for_status()
-            result = response.json()
-            return result['choices'][0]['message']['content']
+            return response.content
         except Exception as e:
-            return f"Error calling Qwen3 Lead: {e}"
+            return f"Error calling Lead LLM: {e}"
 
-    def call_qwen3_coder(self, prompt: str, system_prompt: str = None) -> str:
+    def call_qwen3_coder(self, prompt: str, system_prompt: str = None) -> Dict[str, Any]:
         """
-        Call Qwen3-Coder (Project Member) for implementation.
-        Uses the existing coding agent system.
+        Call Project Member LLM for implementation.
+        Uses the CodingAgent with LLM abstraction and optional sandbox.
         """
-        from orchestrator import TaskOrchestrator
+        from agents.coding_agent import CodingAgent
 
-        # Use existing coding agent infrastructure
-        task_orch = TaskOrchestrator()
-        task_id = task_orch.add_task(prompt)
-        result = task_orch.execute_next_task()
+        # Prepare sandbox config
+        sandbox_config = {}
+        if self.config.security.enable_sandbox:
+            sandbox_config = {
+                'image': self.config.security.docker_image,
+                'timeout': self.config.security.max_execution_time,
+                'network_disabled': False  # Can be made configurable
+            }
+
+        # Create coding agent with member LLM
+        agent = CodingAgent(
+            llm=self.member_llm,
+            workspace_root=str(self.workspace),
+            max_iterations=self.config.orchestration.max_iterations,
+            temperature=self.config.llm.temperature,
+            max_tokens=self.config.llm.max_tokens,
+            use_sandbox=self.config.security.enable_sandbox,
+            sandbox_config=sandbox_config
+        )
+
+        # Add system context if provided
+        task_with_context = prompt
+        if system_prompt:
+            task_with_context = f"{system_prompt}\n\nTask: {prompt}"
+
+        # Run the task
+        result = agent.run_task(task_with_context)
 
         return result
 
     def autonomous_workflow(self, user_request: str, interactive: bool = False) -> Dict[str, Any]:
         """
-        Fully autonomous workflow with two modes:
+        Fully autonomous workflow with database persistence and resume capability.
 
         INTERACTIVE MODE (interactive=True):
         - Works directly with user via terminal
@@ -103,8 +227,19 @@ class HierarchicalOrchestrator:
         5. Qwen3 reviews implementation
         6. Output verification
         7. User approves results [CHECKPOINT - interactive or return]
+
+        All state is persisted to database with checkpoints for resume capability.
         """
+        # Create task in database
+        task_id = self.db.create_task(
+            request=user_request,
+            status=TaskStatus.IN_PROGRESS.value,
+            workflow_state=WorkflowState.PLANNING.value
+        )
+        self.current_task_id = task_id
+
         workflow_log = {
+            "task_id": task_id,
             "user_request": user_request,
             "timestamp": datetime.now().isoformat(),
             "stages": [],
@@ -112,9 +247,15 @@ class HierarchicalOrchestrator:
         }
 
         print(f"\n{'='*70}")
-        print(f"AUTONOMOUS WORKFLOW STARTED")
+        print(f"AUTONOMOUS WORKFLOW STARTED (Task #{task_id})")
         print(f"{'='*70}")
         print(f"User Request: {user_request}\n")
+
+        # Save initial checkpoint
+        self._save_checkpoint(task_id, "workflow_start", {
+            "user_request": user_request,
+            "interactive": interactive
+        })
 
         # STAGE 1: Qwen3 creates plan
         print("STAGE 1: Qwen3 (Project Lead) Creating Implementation Plan...")
@@ -156,6 +297,18 @@ Be thorough but concise. Focus on actionable guidance."""
             "output": plan
         })
 
+        # Save plan to database
+        self._update_workflow_state(
+            task_id,
+            WorkflowState.PLAN_AWAITING_APPROVAL,
+            plan=plan,
+            workflow_log=json.dumps(workflow_log)
+        )
+        self._save_checkpoint(task_id, "after_planning", {
+            "plan": plan,
+            "workflow_log": workflow_log
+        })
+
         print(f"\n{plan}\n")
         print("-" * 70)
 
@@ -165,6 +318,7 @@ Be thorough but concise. Focus on actionable guidance."""
             return {
                 "status": "awaiting_user_approval",
                 "stage": "plan_created",
+                "task_id": task_id,
                 "plan": plan,
                 "workflow_log": workflow_log,
                 "next_action": "User must approve this plan to proceed"
@@ -180,12 +334,27 @@ Be thorough but concise. Focus on actionable guidance."""
 
             if approval in ['yes', 'y']:
                 print("✓ Plan approved! Continuing with implementation...\n")
+                # Record approval in database
+                self._update_workflow_state(
+                    task_id,
+                    WorkflowState.PLAN_APPROVED,
+                    plan_approved_at=datetime.now(),
+                    plan_approved_by="user_interactive"
+                )
                 break
             elif approval in ['no', 'n']:
                 print("✗ Plan rejected. Workflow aborted.")
+                # Record rejection in database
+                self._update_workflow_state(
+                    task_id,
+                    WorkflowState.PLAN_REJECTED,
+                    status=TaskStatus.CANCELLED.value,
+                    plan_rejection_reason="User rejected plan in interactive mode"
+                )
                 return {
                     "status": "aborted",
                     "stage": "plan_rejected",
+                    "task_id": task_id,
                     "plan": plan,
                     "workflow_log": workflow_log
                 }
@@ -228,9 +397,20 @@ Please provide a revised implementation plan addressing these changes."""
         Internal method to continue workflow after plan approval.
         Used by both interactive and programmatic modes.
         """
+        task_id = workflow_log.get("task_id", self.current_task_id)
+
         print(f"\n{'='*70}")
-        print(f"CONTINUING WORKFLOW - Plan Approved")
+        print(f"CONTINUING WORKFLOW - Plan Approved (Task #{task_id})")
         print(f"{'='*70}\n")
+
+        # Update workflow state
+        self._update_workflow_state(
+            task_id,
+            WorkflowState.IMPLEMENTING
+        )
+        self._save_checkpoint(task_id, "start_implementation", {
+            "plan": plan
+        })
 
         # STAGE 2: Qwen3-Coder implements
         print("STAGE 2: Qwen3-Coder (Project Member) Implementing...")
@@ -250,7 +430,19 @@ Follow the plan exactly. Report what you did when complete."""
             "output": implementation_result
         })
 
-        print(f"\nImplementation Result: {json.dumps(implementation_result, indent=2)}\n")
+        # Save implementation to database
+        self._update_workflow_state(
+            task_id,
+            WorkflowState.REVIEWING,
+            implementation=json.dumps(implementation_result),
+            workflow_log=json.dumps(workflow_log)
+        )
+        self._save_checkpoint(task_id, "after_implementation", {
+            "implementation": implementation_result,
+            "workflow_log": workflow_log
+        })
+
+        print(f"\nImplementation Result: {json.dumps(implementation_result, indent=2, default=str)}\n")
         print("-" * 70)
 
         # STAGE 3: Qwen3 reviews
@@ -279,6 +471,18 @@ Provide your review and decision: APPROVE or REQUEST_CHANGES."""
             "stage": "review",
             "agent": "qwen3_lead",
             "output": review
+        })
+
+        # Save review to database
+        self._update_workflow_state(
+            task_id,
+            WorkflowState.VERIFYING,
+            review=review,
+            workflow_log=json.dumps(workflow_log)
+        )
+        self._save_checkpoint(task_id, "after_review", {
+            "review": review,
+            "workflow_log": workflow_log
         })
 
         print(f"\n{review}\n")
@@ -310,6 +514,14 @@ Provide your review and decision: APPROVE or REQUEST_CHANGES."""
                 "output": verification_result
             })
 
+            # Save verification results to database
+            self._update_workflow_state(
+                task_id,
+                WorkflowState.IMPLEMENTATION_AWAITING_APPROVAL,
+                verification_result=json.dumps(verification_result),
+                workflow_log=json.dumps(workflow_log)
+            )
+
             if quick_check_result.get("success"):
                 print("\n✓ Output verification PASSED")
             else:
@@ -326,6 +538,21 @@ Provide your review and decision: APPROVE or REQUEST_CHANGES."""
                 "output": verification_result
             })
 
+            # Save error to database
+            self._update_workflow_state(
+                task_id,
+                WorkflowState.IMPLEMENTATION_AWAITING_APPROVAL,
+                verification_result=json.dumps(verification_result),
+                workflow_log=json.dumps(workflow_log),
+                error_details=str(e)
+            )
+
+        # Save checkpoint before final approval
+        self._save_checkpoint(task_id, "after_verification", {
+            "verification": verification_result,
+            "workflow_log": workflow_log
+        })
+
         print("-" * 70)
 
         # CHECKPOINT 2: Final approval
@@ -334,6 +561,7 @@ Provide your review and decision: APPROVE or REQUEST_CHANGES."""
             return {
                 "status": "awaiting_user_approval",
                 "stage": "implementation_complete",
+                "task_id": task_id,
                 "plan": plan,
                 "implementation": implementation_result,
                 "review": review,
@@ -358,12 +586,23 @@ Provide your review and decision: APPROVE or REQUEST_CHANGES."""
             if approval in ['yes', 'y']:
                 print("✓ Implementation approved! Workflow complete.\n")
 
+                # Update database - mark as completed
+                self._update_workflow_state(
+                    task_id,
+                    WorkflowState.COMPLETED,
+                    status=TaskStatus.COMPLETED.value,
+                    implementation_approved_at=datetime.now(),
+                    implementation_approved_by="user_interactive",
+                    workflow_log=json.dumps(workflow_log)
+                )
+
                 # Save workflow log
                 log_file = self.save_workflow_log(workflow_log)
 
                 return {
                     "status": "completed",
                     "stage": "approved",
+                    "task_id": task_id,
                     "plan": plan,
                     "implementation": implementation_result,
                     "review": review,
@@ -374,10 +613,21 @@ Provide your review and decision: APPROVE or REQUEST_CHANGES."""
                 }
             elif approval in ['no', 'n']:
                 print("✗ Implementation rejected. Workflow aborted.")
+
+                # Update database - mark as rejected
+                self._update_workflow_state(
+                    task_id,
+                    WorkflowState.IMPLEMENTATION_REJECTED,
+                    status=TaskStatus.CANCELLED.value,
+                    implementation_rejection_reason="User rejected implementation in interactive mode",
+                    workflow_log=json.dumps(workflow_log)
+                )
+
                 self.save_workflow_log(workflow_log)
                 return {
                     "status": "aborted",
                     "stage": "implementation_rejected",
+                    "task_id": task_id,
                     "plan": plan,
                     "implementation": implementation_result,
                     "review": review,
@@ -391,15 +641,137 @@ Provide your review and decision: APPROVE or REQUEST_CHANGES."""
             else:
                 print("Please enter 'yes', 'no', or 'retry'")
 
-    def continue_after_plan_approval(self, workflow_log: Dict, plan: str) -> Dict[str, Any]:
+    def continue_after_plan_approval(
+        self,
+        workflow_log: Dict,
+        plan: str,
+        approved_by: str = "user_programmatic"
+    ) -> Dict[str, Any]:
         """
-        Backward compatibility wrapper for programmatic mode.
         Continue workflow after plan has been approved externally.
 
         This method is for programmatic callers (like Claude Code) who handle
         approval themselves. For interactive mode, use autonomous_workflow(interactive=True).
+
+        Args:
+            workflow_log: Workflow log from previous stage
+            plan: Approved plan
+            approved_by: Identifier of who approved the plan
+
+        Returns:
+            Workflow result
         """
+        task_id = workflow_log.get("task_id", self.current_task_id)
+
+        # Record plan approval in database
+        if task_id:
+            self._update_workflow_state(
+                task_id,
+                WorkflowState.PLAN_APPROVED,
+                plan_approved_at=datetime.now(),
+                plan_approved_by=approved_by
+            )
+
         return self._continue_workflow(workflow_log, plan, interactive=False)
+
+    def resume_task(self, task_id: int) -> Dict[str, Any]:
+        """
+        Resume an interrupted task from its last checkpoint.
+
+        Args:
+            task_id: Task ID to resume
+
+        Returns:
+            Workflow result
+        """
+        print(f"\n{'='*70}")
+        print(f"RESUMING TASK #{task_id}")
+        print(f"{'='*70}\n")
+
+        # Load task from database
+        task = self.db.get_task(task_id)
+        if not task:
+            raise ValueError(f"Task #{task_id} not found")
+
+        # Check if task is resumable
+        if task.workflow_state == WorkflowState.COMPLETED.value:
+            print(f"⚠ Task #{task_id} is already completed")
+            return {
+                "status": "already_completed",
+                "task_id": task_id,
+                "workflow_state": task.workflow_state
+            }
+
+        if task.workflow_state == WorkflowState.FAILED.value:
+            print(f"⚠ Task #{task_id} has failed")
+            return {
+                "status": "failed",
+                "task_id": task_id,
+                "error": task.error_details
+            }
+
+        # Load latest checkpoint
+        checkpoint = self.db.get_latest_checkpoint(task_id)
+        if not checkpoint:
+            print(f"⚠ No checkpoint found for task #{task_id}, starting from beginning")
+            return self.autonomous_workflow(task.request, interactive=False)
+
+        print(f"  Last checkpoint: {checkpoint['checkpoint']}")
+        print(f"  Workflow state: {task.workflow_state}\n")
+
+        # Parse workflow log
+        try:
+            workflow_log = json.loads(task.workflow_log) if task.workflow_log else {}
+        except json.JSONDecodeError:
+            workflow_log = {}
+
+        workflow_log["task_id"] = task_id
+        workflow_log["resumed_at"] = datetime.now().isoformat()
+        workflow_log["resumed_from"] = checkpoint['checkpoint']
+
+        self.current_task_id = task_id
+
+        # Resume based on workflow state
+        if task.workflow_state == WorkflowState.PLAN_AWAITING_APPROVAL.value:
+            print("  Resuming at: Plan awaiting approval")
+            return {
+                "status": "awaiting_user_approval",
+                "stage": "plan_created",
+                "task_id": task_id,
+                "plan": task.plan,
+                "workflow_log": workflow_log,
+                "next_action": "User must approve this plan to proceed"
+            }
+
+        elif task.workflow_state == WorkflowState.PLAN_APPROVED.value:
+            print("  Resuming at: Plan approved, starting implementation")
+            return self._continue_workflow(workflow_log, task.plan, interactive=False)
+
+        elif task.workflow_state == WorkflowState.IMPLEMENTATION_AWAITING_APPROVAL.value:
+            print("  Resuming at: Implementation awaiting approval")
+            try:
+                implementation = json.loads(task.implementation) if task.implementation else {}
+                verification = json.loads(task.verification_result) if task.verification_result else {}
+            except json.JSONDecodeError:
+                implementation = task.implementation
+                verification = task.verification_result
+
+            return {
+                "status": "awaiting_user_approval",
+                "stage": "implementation_complete",
+                "task_id": task_id,
+                "plan": task.plan,
+                "implementation": implementation,
+                "review": task.review,
+                "verification": verification,
+                "workflow_log": workflow_log,
+                "next_action": "User must review and approve to create PR"
+            }
+
+        else:
+            print(f"  ⚠ Unknown workflow state: {task.workflow_state}")
+            print("  Starting from scratch")
+            return self.autonomous_workflow(task.request, interactive=False)
 
     def save_workflow_log(self, workflow_log: Dict):
         """Save workflow log for audit trail."""
@@ -411,7 +783,7 @@ Provide your review and decision: APPROVE or REQUEST_CHANGES."""
 
 
 def main():
-    """Test the hierarchical orchestrator."""
+    """Test the hierarchical orchestrator with new architecture."""
     import sys
     import argparse
 
@@ -425,21 +797,93 @@ Examples:
 
   # Interactive mode (asks user directly via terminal)
   python3 hierarchical_orchestrator.py --interactive "Add error handling to the search function"
+
+  # Use custom config file
+  python3 hierarchical_orchestrator.py --config config/custom.yaml "Your task here"
         """
     )
-    parser.add_argument('request', type=str, help='User request for the coding task')
+    parser.add_argument(
+        'request',
+        type=str,
+        nargs='?',  # Make optional
+        help='User request for the coding task'
+    )
     parser.add_argument(
         '--interactive', '-i',
         action='store_true',
         help='Run in interactive mode (ask user for approvals directly)'
     )
+    parser.add_argument(
+        '--config', '-c',
+        type=str,
+        help='Path to configuration file (YAML)'
+    )
+    parser.add_argument(
+        '--provider',
+        choices=['ollama', 'anthropic'],
+        help='Override LLM provider from config'
+    )
+    parser.add_argument(
+        '--resume',
+        type=int,
+        metavar='TASK_ID',
+        help='Resume an interrupted task by ID'
+    )
+    parser.add_argument(
+        '--list-resumable',
+        action='store_true',
+        help='List all resumable tasks and exit'
+    )
 
     args = parser.parse_args()
 
-    orchestrator = HierarchicalOrchestrator()
+    # Load configuration
+    config = None
+    if args.config:
+        from pathlib import Path
+        config = get_config(config_path=Path(args.config))
+    else:
+        config = get_config()
 
-    # Start autonomous workflow
-    result = orchestrator.autonomous_workflow(args.request, interactive=args.interactive)
+    # Override provider if specified
+    if args.provider:
+        config.llm.provider = args.provider
+
+    # Create orchestrator with config
+    orchestrator = HierarchicalOrchestrator(config=config)
+
+    # Handle --list-resumable
+    if args.list_resumable:
+        db = get_db()
+        resumable = db.get_resumable_tasks()
+        if not resumable:
+            print("No resumable tasks found.")
+            return
+        print(f"\nFound {len(resumable)} resumable task(s):\n")
+        for task in resumable:
+            print(f"Task #{task.id}:")
+            print(f"  Request: {task.request[:80]}...")
+            print(f"  State: {task.workflow_state}")
+            print(f"  Status: {task.status}")
+            print(f"  Last updated: {task.updated_at}")
+            print()
+        print("Use --resume TASK_ID to continue a task\n")
+        return
+
+    # Handle --resume
+    if args.resume:
+        try:
+            result = orchestrator.resume_task(args.resume)
+        except Exception as e:
+            print(f"\n✗ Error resuming task: {e}")
+            import traceback
+            traceback.print_exc()
+            return
+    else:
+        # Start new workflow
+        if not args.request:
+            parser.error("request is required when not using --resume or --list-resumable")
+        result = orchestrator.autonomous_workflow(args.request, interactive=args.interactive)
 
     # Display results
     print(f"\n{'='*70}")

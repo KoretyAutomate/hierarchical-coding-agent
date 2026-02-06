@@ -1,5 +1,6 @@
 """
-Coding tools for the local agent
+Coding tools for the local agent.
+Now with optional Docker sandbox for safe execution.
 """
 import os
 import subprocess
@@ -9,10 +10,45 @@ from typing import Optional, Dict, Any
 
 
 class CodingTools:
-    """Tools available to the coding agent"""
+    """
+    Tools available to the coding agent.
 
-    def __init__(self, workspace_root: str):
+    Supports optional sandboxed execution via Docker for safety.
+    """
+
+    def __init__(
+        self,
+        workspace_root: str,
+        use_sandbox: bool = False,
+        sandbox_config: Optional[Dict[str, Any]] = None
+    ):
+        """
+        Initialize coding tools.
+
+        Args:
+            workspace_root: Root directory of the workspace
+            use_sandbox: Whether to use Docker sandbox for execution
+            sandbox_config: Optional sandbox configuration
+        """
         self.workspace_root = Path(workspace_root)
+        self.use_sandbox = use_sandbox
+        self.sandbox = None
+
+        # Initialize sandbox if requested
+        if use_sandbox:
+            try:
+                from core.sandbox import get_sandbox
+                sandbox_config = sandbox_config or {}
+                self.sandbox = get_sandbox(
+                    workspace_path=self.workspace_root,
+                    use_docker=True,
+                    **sandbox_config
+                )
+                print("✓ Sandbox enabled for code execution")
+            except Exception as e:
+                print(f"⚠ Failed to initialize sandbox: {e}")
+                print("  Falling back to direct execution")
+                self.use_sandbox = False
 
     def read_file(self, file_path: str) -> str:
         """Read a file from the workspace"""
@@ -69,7 +105,39 @@ class CodingTools:
             return f"Error listing files: {str(e)}"
 
     def execute_python(self, code: str, timeout: int = 30) -> str:
-        """Execute Python code in a safe environment"""
+        """
+        Execute Python code in a safe environment.
+
+        Uses Docker sandbox if enabled, otherwise runs directly on host.
+
+        Args:
+            code: Python code to execute
+            timeout: Timeout in seconds
+
+        Returns:
+            Formatted output string
+        """
+        # Use sandbox if enabled
+        if self.use_sandbox and self.sandbox:
+            try:
+                result = self.sandbox.execute_python(code, timeout=timeout)
+
+                output = ""
+                if result.stdout:
+                    output += f"STDOUT:\n{result.stdout}\n"
+                if result.stderr:
+                    output += f"STDERR:\n{result.stderr}\n"
+                if result.timed_out:
+                    output += f"⚠ Execution timed out after {timeout} seconds\n"
+                output += f"Return code: {result.exit_code}"
+                if result.error:
+                    output += f"\nError: {result.error}"
+
+                return output
+            except Exception as e:
+                return f"Error executing in sandbox: {str(e)}"
+
+        # Fallback to direct execution (legacy mode)
         try:
             result = subprocess.run(
                 ['python3', '-c', code],
@@ -93,7 +161,37 @@ class CodingTools:
             return f"Error executing code: {str(e)}"
 
     def run_tests(self, test_path: str = "tests") -> str:
-        """Run pytest tests"""
+        """
+        Run pytest tests.
+
+        Uses Docker sandbox if enabled, otherwise runs directly on host.
+
+        Args:
+            test_path: Path to tests directory/file
+
+        Returns:
+            Formatted test output string
+        """
+        # Use sandbox if enabled
+        if self.use_sandbox and self.sandbox:
+            try:
+                result = self.sandbox.run_tests(test_path, timeout=120)
+
+                output = f"Test Results:\n"
+                if result.stdout:
+                    output += result.stdout
+                if result.stderr:
+                    output += f"\n{result.stderr}"
+                if result.timed_out:
+                    output += f"\n⚠ Tests timed out after 120 seconds"
+                if result.error:
+                    output += f"\nError: {result.error}"
+
+                return output
+            except Exception as e:
+                return f"Error running tests in sandbox: {str(e)}"
+
+        # Fallback to direct execution (legacy mode)
         full_path = self.workspace_root / test_path
         try:
             result = subprocess.run(

@@ -1,8 +1,8 @@
 """
-Main Coding Agent that uses Qwen3-Coder-14B
+Main Coding Agent that uses LLM abstraction layer.
+Supports multiple LLM providers (Ollama, Anthropic, etc.)
 """
 import json
-import httpx
 import time
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -10,43 +10,77 @@ import sys
 sys.path.append(str(Path(__file__).parent.parent))
 
 from tools.coding_tools import CodingTools, get_tool_schemas
+from core.llm import BaseLLM, LLMResponse
 
 
 class CodingAgent:
-    """Autonomous coding agent powered by Qwen3-Coder-14B"""
+    """Autonomous coding agent powered by pluggable LLM backends"""
 
-    def __init__(self, config: Dict[str, Any]):
-        self.config = config
-        self.llm_config = config['llm']
-        self.workspace_root = config['workspace']['project_root']
-        self.tools = CodingTools(self.workspace_root)
+    def __init__(
+        self,
+        llm: BaseLLM,
+        workspace_root: str,
+        max_iterations: int = 10,
+        temperature: float = 0.2,
+        max_tokens: int = 4096,
+        use_sandbox: bool = False,
+        sandbox_config: Optional[Dict[str, Any]] = None
+    ):
+        """
+        Initialize coding agent with LLM adapter and optional sandbox.
+
+        Args:
+            llm: LLM adapter instance (OllamaAdapter, AnthropicAdapter, etc.)
+            workspace_root: Root directory of the project workspace
+            max_iterations: Maximum iterations for task execution
+            temperature: LLM sampling temperature
+            max_tokens: Maximum tokens to generate
+            use_sandbox: Whether to use Docker sandbox for code execution
+            sandbox_config: Optional sandbox configuration
+        """
+        self.llm = llm
+        self.workspace_root = workspace_root
+        self.tools = CodingTools(
+            self.workspace_root,
+            use_sandbox=use_sandbox,
+            sandbox_config=sandbox_config
+        )
         self.conversation_history = []
-        self.max_iterations = 10
+        self.max_iterations = max_iterations
+        self.temperature = temperature
+        self.max_tokens = max_tokens
 
-    def _call_llm(self, messages: List[Dict], tools: Optional[List] = None) -> Dict:
-        """Call the LLM API"""
-        payload = {
-            "model": self.llm_config['model_name'].split('/')[-1],
-            "messages": messages,
-            "temperature": self.llm_config['temperature'],
-            "max_tokens": self.llm_config['max_tokens'],
-        }
+    def _call_llm(
+        self,
+        messages: List[Dict],
+        tools: Optional[List] = None,
+        **kwargs
+    ) -> LLMResponse:
+        """
+        Call the LLM using the abstraction layer.
 
-        if tools:
-            payload["tools"] = tools
-            payload["tool_choice"] = "auto"
+        Args:
+            messages: Conversation messages
+            tools: Optional tool schemas
+            **kwargs: Additional LLM-specific parameters
 
+        Returns:
+            LLMResponse object
+
+        Raises:
+            Exception: If LLM call fails
+        """
         try:
-            response = httpx.post(
-                f"{self.llm_config['base_url']}/chat/completions",
-                json=payload,
-                headers={"Authorization": f"Bearer {self.llm_config['api_key']}"},
-                timeout=self.llm_config['timeout']
+            response = self.llm.generate(
+                messages=messages,
+                tools=tools,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                **kwargs
             )
-            response.raise_for_status()
-            return response.json()
+            return response
         except Exception as e:
-            return {"error": str(e)}
+            raise Exception(f"LLM call failed: {str(e)}")
 
     def _execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> str:
         """Execute a tool call"""
@@ -102,44 +136,56 @@ class CodingAgent:
             print(f"\n--- Iteration {iterations}/{self.max_iterations} ---")
 
             # Call LLM
-            response = self._call_llm(messages, tools=tool_schemas)
-
-            if "error" in response:
+            try:
+                response = self._call_llm(messages, tools=tool_schemas)
+            except Exception as e:
                 return {
                     "success": False,
-                    "result": f"LLM Error: {response['error']}",
+                    "result": f"LLM Error: {str(e)}",
                     "iterations": iterations,
                     "tool_calls": all_tool_calls
                 }
 
-            # Get assistant message
-            choice = response.get("choices", [{}])[0]
-            assistant_message = choice.get("message", {})
+            # Build assistant message from LLMResponse
+            assistant_message = {
+                "role": "assistant",
+                "content": response.content or ""
+            }
+
+            # Add tool calls if present
+            if response.tool_calls:
+                assistant_message["tool_calls"] = response.tool_calls
+
             messages.append(assistant_message)
 
             # Check for tool calls
-            tool_calls = assistant_message.get("tool_calls", [])
+            tool_calls = response.tool_calls or []
 
             if not tool_calls:
                 # No more tool calls - agent is done
-                final_content = assistant_message.get("content", "Task completed")
+                final_content = response.content or "Task completed"
                 print(f"\n✓ Agent finished: {final_content}")
 
                 return {
                     "success": True,
                     "result": final_content,
                     "iterations": iterations,
-                    "tool_calls": all_tool_calls
+                    "tool_calls": all_tool_calls,
+                    "usage": response.usage
                 }
 
             # Execute tool calls
             for tool_call in tool_calls:
                 func = tool_call.get("function", {})
                 tool_name = func.get("name")
-                try:
-                    arguments = json.loads(func.get("arguments", "{}"))
-                except json.JSONDecodeError:
-                    arguments = {}
+
+                # Handle arguments - may already be dict or JSON string
+                arguments = func.get("arguments", {})
+                if isinstance(arguments, str):
+                    try:
+                        arguments = json.loads(arguments)
+                    except json.JSONDecodeError:
+                        arguments = {}
 
                 print(f"  🔧 Calling: {tool_name}({arguments})")
 
@@ -170,29 +216,43 @@ class CodingAgent:
         }
 
 
-def load_config(config_path: str = "/home/korety/coding-agent/config/agent_config.yaml") -> Dict:
-    """Load configuration from YAML"""
-    import yaml
-    with open(config_path, 'r') as f:
-        return yaml.safe_load(f)
-
-
 if __name__ == "__main__":
-    # Test the agent
-    import yaml
+    # Test the agent with new architecture
+    from core.llm import OllamaAdapter
+    from core.config import get_config
 
-    config_path = Path(__file__).parent.parent / "config" / "agent_config.yaml"
-    with open(config_path) as f:
-        config = yaml.safe_load(f)
+    # Load configuration
+    config = get_config()
 
-    agent = CodingAgent(config)
+    # Create LLM adapter
+    if config.llm.provider == "ollama":
+        llm = OllamaAdapter(
+            model_name=config.llm.ollama_model,
+            base_url=config.llm.ollama_base_url,
+            timeout=config.llm.ollama_timeout
+        )
+    else:
+        from core.llm import AnthropicAdapter
+        llm = AnthropicAdapter(
+            model_name=config.llm.anthropic_model,
+            api_key=config.llm.anthropic_api_key
+        )
+
+    # Create agent
+    agent = CodingAgent(
+        llm=llm,
+        workspace_root=str(config.workspace.project_root),
+        max_iterations=config.orchestration.max_iterations,
+        temperature=config.llm.temperature,
+        max_tokens=config.llm.max_tokens
+    )
 
     # Test task
     result = agent.run_task(
-        "Read the podcast_crew.py file and summarize its main components"
+        "List files in the current workspace and identify Python files"
     )
 
     print("\n" + "="*60)
     print("FINAL RESULT:")
     print("="*60)
-    print(json.dumps(result, indent=2))
+    print(json.dumps(result, indent=2, default=str))

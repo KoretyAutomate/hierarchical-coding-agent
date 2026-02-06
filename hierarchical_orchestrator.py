@@ -16,6 +16,7 @@ from output_verifier import OutputVerifier
 from core.llm import BaseLLM, OllamaAdapter, AnthropicAdapter
 from core.config import get_config, AppConfig
 from core.db import get_db, Task, WorkflowState, TaskStatus
+from core.context_manager import ContextManager
 
 class HierarchicalOrchestrator:
     """
@@ -60,6 +61,9 @@ class HierarchicalOrchestrator:
         self.logs_dir = self.config.workspace.logs_path
         self.logs_dir.mkdir(parents=True, exist_ok=True)
 
+        # Initialize Context Manager (Cline-like feature)
+        self.context_manager = ContextManager(str(self.workspace))
+
         # Current task tracking
         self.current_task_id = task_id
 
@@ -68,6 +72,7 @@ class HierarchicalOrchestrator:
         print(f"  Member LLM: {self.member_llm}")
         print(f"  Workspace: {self.workspace}")
         print(f"  Database: {self.db.db_path}")
+        print(f"  Context Manager: Enabled (Smart Context)")
 
         # Check for resumable tasks if no task_id provided
         if not task_id and self.config.orchestration.enable_resume:
@@ -261,6 +266,10 @@ class HierarchicalOrchestrator:
         print("STAGE 1: Qwen3 (Project Lead) Creating Implementation Plan...")
         print("-" * 70)
 
+        # Generate project context using ContextManager (Cline-like feature)
+        print("  Analyzing project structure...")
+        project_context = self.context_manager.get_context_for_task(user_request, max_tokens=4000)
+
         planning_prompt = f"""You are the Project Lead responsible for planning software implementations.
 
 User Request: {user_request}
@@ -276,7 +285,7 @@ Be specific and actionable. This plan will be given to a junior developer (Qwen3
 
 Provide your plan in a clear, structured format."""
 
-        system_prompt = """You are an experienced Project Lead (Technical Architect) responsible for:
+        system_prompt = f"""You are an experienced Project Lead (Technical Architect) responsible for:
 - Analyzing requirements
 - Creating detailed implementation plans
 - Reviewing code from junior developers
@@ -287,7 +296,9 @@ You work with:
 - Project Manager (Claude Code): Coordinates workflow, runs tests
 - Junior Developer (Qwen3-Coder): Implements your plans
 
-Be thorough but concise. Focus on actionable guidance."""
+Be thorough but concise. Focus on actionable guidance.
+
+{project_context}"""
 
         plan = self.call_qwen3_lead(planning_prompt, system_prompt)
 

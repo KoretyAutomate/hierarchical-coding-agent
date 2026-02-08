@@ -86,9 +86,10 @@ class HierarchicalOrchestrator:
     def _create_default_lead_llm(self) -> BaseLLM:
         """Create default LLM for Project Lead role."""
         if self.config.llm.provider == "ollama":
+            # Use separate base_url for lead model (supports vLLM on different port)
             return OllamaAdapter(
                 model_name=self.config.orchestration.lead_model,
-                base_url=self.config.llm.ollama_base_url,
+                base_url=self.config.orchestration.lead_base_url,
                 timeout=self.config.llm.ollama_timeout
             )
         else:

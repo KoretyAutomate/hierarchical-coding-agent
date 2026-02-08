@@ -175,8 +175,12 @@ class OrchestrationConfig(BaseSettings):
         description="Project Manager model (high-level coordination)"
     )
     lead_model: str = Field(
-        default="frob/qwen3-coder-next",
+        default="deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
         description="Project Lead model (planning and review)"
+    )
+    lead_base_url: str = Field(
+        default="http://localhost:8000/v1",
+        description="Base URL for Lead model (vLLM server)"
     )
     member_model: str = Field(
         default="frob/qwen3-coder-next",

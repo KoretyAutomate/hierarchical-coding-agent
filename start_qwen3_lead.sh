@@ -1,26 +1,38 @@
 #!/bin/bash
-# Start Qwen3-Next-80B-A3B-Thinking (Project Lead) with vLLM
+# Start DeepSeek-R1-Distill-Qwen-32B (Project Lead) with vLLM
+# Updated from Qwen3 to DeepSeek-R1 for better context handling
 
 echo "=================================="
-echo "Starting Qwen3 Project Lead"
+echo "Starting Project Lead (DeepSeek-R1)"
 echo "=================================="
-echo "Model: Qwen3-Next-80B-A3B-Thinking-AWQ-4bit"
-echo "Type: MoE (80B total, 3B active)"
-echo "Quantization: AWQ 4-bit"
+echo "Model: DeepSeek-R1-Distill-Qwen-32B"
+echo "Type: Reasoning model (32B params)"
+echo "Purpose: Deep research, planning, hierarchical orchestration"
 echo "Port: 8000"
-echo "Memory: Capped at 50%"
+echo "Context: 32k tokens"
+echo "Memory: 90% GPU utilization"
 echo ""
 
-# Start vLLM server
+# Activate conda environment
+source /home/korety/miniconda3/bin/activate podcast_flow
+
+# Start vLLM server with DeepSeek-R1
 python3 -m vllm.entrypoints.openai.api_server \
-    --model cyankiwi/Qwen3-Next-80B-A3B-Thinking-AWQ-4bit \
+    --model deepseek-ai/DeepSeek-R1-Distill-Qwen-32B \
     --port 8000 \
-    --gpu-memory-utilization 0.5 \
-    --max-model-len 8192 \
+    --gpu-memory-utilization 0.9 \
+    --max-model-len 32768 \
     --tensor-parallel-size 1 \
     --dtype auto \
-    --quantization awq \
-    --api-key NA \
-    --served-model-name Qwen3-Lead
+    --trust-remote-code \
+    --api-key EMPTY \
+    --served-model-name DeepSeek-R1-Lead
 
-echo "Qwen3 Project Lead started on http://localhost:8000"
+echo ""
+echo "=================================="
+echo "✓ DeepSeek-R1 Project Lead started"
+echo "=================================="
+echo "API: http://localhost:8000/v1"
+echo "Health: http://localhost:8000/health"
+echo "Models: http://localhost:8000/v1/models"
+echo ""

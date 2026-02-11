@@ -11,6 +11,7 @@ Provides:
 import sqlite3
 import json
 import shutil
+import threading
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, List, Dict, Any
@@ -112,6 +113,7 @@ class DatabaseManager:
         """
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
         self._init_database()
 
     def _init_database(self):
@@ -246,22 +248,23 @@ class DatabaseManager:
     @contextmanager
     def get_connection(self):
         """
-        Get database connection as context manager.
+        Get database connection as context manager with thread-safety.
 
         Usage:
             with db.get_connection() as conn:
                 conn.execute(...)
         """
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row  # Enable dict-like access
-        try:
-            yield conn
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
+        with self._lock:
+            conn = sqlite3.connect(self.db_path, timeout=10.0)
+            conn.row_factory = sqlite3.Row  # Enable dict-like access
+            try:
+                yield conn
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+            finally:
+                conn.close()
 
     def create_task(self, request: str, **kwargs) -> int:
         """
@@ -455,7 +458,7 @@ class DatabaseManager:
                 SELECT checkpoint_name, checkpoint_data
                 FROM checkpoints
                 WHERE task_id = ?
-                ORDER BY created_at DESC
+                ORDER BY id DESC
                 LIMIT 1
             """, (task_id,))
 

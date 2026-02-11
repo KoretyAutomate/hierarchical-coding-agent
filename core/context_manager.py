@@ -577,8 +577,9 @@ class ContextManager:
         context_parts.append(stats_text)
         token_count += self.estimate_tokens(stats_text)
 
-        # Add relevant files based on task description (simple keyword matching)
-        keywords = task_description.lower().split()
+        # Add relevant files based on task description
+        # Match against filename, docstrings, class names, function names, and imports
+        keywords = [kw for kw in task_description.lower().split() if len(kw) > 2]
         relevant_files = []
 
         for root, dirs, files in os.walk(self.project_root):
@@ -590,11 +591,34 @@ class ContextManager:
                 if file_path.suffix != '.py' or self._should_ignore(file_path):
                     continue
 
-                # Check if filename matches any keyword
-                if any(keyword in file.lower() for keyword in keywords):
+                # Check filename
+                name_lower = file.lower()
+                score = sum(1 for kw in keywords if kw in name_lower)
+
+                # Check structure (docstrings, class/function names, imports)
+                if score == 0:
+                    structure = self.parse_python_file(str(file_path))
+                    if structure:
+                        searchable = " ".join([
+                            structure.module_docstring or "",
+                            " ".join(c["name"].lower() for c in structure.classes),
+                            " ".join(f["name"].lower() for f in structure.functions),
+                            " ".join(i.lower() for i in structure.imports),
+                            " ".join(
+                                (c.get("docstring") or "").lower()
+                                for c in structure.classes
+                            ),
+                        ])
+                        score = sum(1 for kw in keywords if kw in searchable)
+
+                if score > 0:
                     info = self.get_file_info(str(file_path))
                     if info:
-                        relevant_files.append(info)
+                        relevant_files.append((score, info))
+
+        # Sort by relevance score (highest first)
+        relevant_files.sort(key=lambda x: x[0], reverse=True)
+        relevant_files = [info for _, info in relevant_files]
 
         if relevant_files:
             context_parts.append("\n## Potentially Relevant Files")

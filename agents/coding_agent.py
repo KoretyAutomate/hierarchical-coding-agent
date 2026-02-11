@@ -58,6 +58,7 @@ class CodingAgent:
     ) -> LLMResponse:
         """
         Call the LLM using the abstraction layer.
+        Retry logic is handled by the adapter (tenacity decorator).
 
         Args:
             messages: Conversation messages
@@ -68,19 +69,15 @@ class CodingAgent:
             LLMResponse object
 
         Raises:
-            Exception: If LLM call fails
+            Exception: If LLM call fails after retries
         """
-        try:
-            response = self.llm.generate(
-                messages=messages,
-                tools=tools,
-                temperature=self.temperature,
-                max_tokens=self.max_tokens,
-                **kwargs
-            )
-            return response
-        except Exception as e:
-            raise Exception(f"LLM call failed: {str(e)}")
+        return self.llm.generate(
+            messages=messages,
+            tools=tools,
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+            **kwargs
+        )
 
     def _execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> str:
         """Execute a tool call"""

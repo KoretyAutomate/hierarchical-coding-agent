@@ -37,6 +37,7 @@ class CodingTools:
         self.use_sandbox = use_sandbox
         self.sandbox = None
         self.enable_diff_review = enable_diff_review
+        self._pending_diffs: Dict[str, Any] = {}
 
         # Initialize DiffEngine for code review
         self.diff_engine = DiffEngine(str(self.workspace_root))
@@ -103,8 +104,6 @@ class CodingTools:
                 }
 
                 # Store diff_result for later approval
-                if not hasattr(self, '_pending_diffs'):
-                    self._pending_diffs = {}
                 self._pending_diffs[file_path] = diff_result
 
                 return json.dumps(result, indent=2)
@@ -163,7 +162,7 @@ class CodingTools:
         Returns:
             Success or error message
         """
-        if not hasattr(self, '_pending_diffs') or file_path not in self._pending_diffs:
+        if file_path not in self._pending_diffs:
             return f"Error: No pending changes found for {file_path}"
 
         diff_result = self._pending_diffs[file_path]
@@ -194,7 +193,7 @@ class CodingTools:
         Returns:
             Success or error message
         """
-        if not hasattr(self, '_pending_diffs') or file_path not in self._pending_diffs:
+        if file_path not in self._pending_diffs:
             return f"Error: No pending changes found for {file_path}"
 
         diff_result = self._pending_diffs[file_path]
@@ -218,7 +217,7 @@ class CodingTools:
         Returns:
             Formatted list of pending changes
         """
-        if not hasattr(self, '_pending_diffs') or not self._pending_diffs:
+        if not self._pending_diffs:
             return "No pending changes"
 
         lines = ["Pending changes:"]
@@ -226,6 +225,19 @@ class CodingTools:
             lines.append(f"  - {file_path}: +{diff_result.additions}/-{diff_result.deletions}")
 
         return "\n".join(lines)
+
+    def cleanup_pending_diffs(self) -> str:
+        """Clean up all pending diffs and their temp files."""
+        if not self._pending_diffs:
+            return "No pending diffs to clean up"
+        count = len(self._pending_diffs)
+        for file_path, diff_result in list(self._pending_diffs.items()):
+            try:
+                self.diff_engine.cleanup_temp_file(diff_result)
+            except Exception:
+                pass
+        self._pending_diffs.clear()
+        return f"Cleaned up {count} pending diff(s)"
 
     def list_files(self, directory: str = ".") -> str:
         """List files in a directory"""

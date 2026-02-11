@@ -274,7 +274,9 @@ class HierarchicalOrchestrator:
 
         # Generate project context using ContextManager (Cline-like feature)
         print("  Analyzing project structure...")
-        project_context = self.context_manager.get_context_for_task(user_request, max_tokens=4000)
+        project_context = self.context_manager.get_context_for_task(
+            user_request, max_tokens=self.config.orchestration.context_token_budget
+        )
 
         planning_prompt = f"""You are the Project Lead responsible for planning software implementations.
 

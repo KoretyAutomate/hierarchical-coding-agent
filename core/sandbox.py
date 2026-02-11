@@ -4,12 +4,15 @@ Docker-based sandbox for safe code execution.
 Provides isolated container environment for running untrusted code
 without risking the host system.
 """
+import logging
 import os
 import time
 import tempfile
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 try:
     import docker
@@ -382,11 +385,26 @@ class FallbackSandbox:
     Only use for development/testing.
     """
 
+    _warned = False
+
     def __init__(self, workspace_path: Optional[Path] = None, **kwargs):
-        """Initialize fallback sandbox."""
+        """Initialize fallback sandbox.
+
+        WARNING: This executes code directly on the host with NO isolation.
+        Only use when SECURITY_ENABLE_SANDBOX=false is explicitly set.
+        """
         self.workspace_path = workspace_path
-        print("⚠ WARNING: Using fallback sandbox (no isolation)")
-        print("  Install Docker for secure execution")
+        msg = (
+            "SECURITY WARNING: FallbackSandbox is active — code executes "
+            "directly on the host with NO isolation. Set SECURITY_ENABLE_SANDBOX=true "
+            "and install Docker for safe execution."
+        )
+        logger.warning(msg)
+        if not FallbackSandbox._warned:
+            print(f"\n{'!'*70}")
+            print(f"  {msg}")
+            print(f"{'!'*70}\n")
+            FallbackSandbox._warned = True
 
     def execute_python(self, code: str, timeout: Optional[int] = None) -> SandboxResult:
         """Execute Python code directly (UNSAFE)."""

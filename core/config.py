@@ -168,6 +168,11 @@ class OrchestrationConfig(BaseSettings):
         gt=0,
         description="Save state every N operations"
     )
+    context_token_budget: int = Field(
+        default=4000,
+        gt=0,
+        description="Max tokens for project context injected into LLM prompts"
+    )
 
     # Hierarchical agent roles
     pm_model: str = Field(
@@ -175,12 +180,12 @@ class OrchestrationConfig(BaseSettings):
         description="Project Manager model (high-level coordination)"
     )
     lead_model: str = Field(
-        default="deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
+        default="deepseek-r1:32b",
         description="Project Lead model (planning and review)"
     )
     lead_base_url: str = Field(
-        default="http://localhost:8000/v1",
-        description="Base URL for Lead model (vLLM server)"
+        default="http://localhost:11434/v1",
+        description="Base URL for Lead model (Ollama server)"
     )
     member_model: str = Field(
         default="frob/qwen3-coder-next",

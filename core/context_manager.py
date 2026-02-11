@@ -9,9 +9,10 @@ This module provides intelligent context management for the hierarchical agent:
 
 import ast
 import os
+import time
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import logging
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,13 @@ class CodeStructure:
     functions: List[Dict[str, any]]
     imports: List[str]
     module_docstring: Optional[str]
+
+
+@dataclass
+class _CacheEntry:
+    """Cache entry with modification time for invalidation."""
+    mtime: float
+    data: object
 
 
 class ContextManager:
@@ -84,6 +92,14 @@ class ContextManager:
         """
         self.project_root = Path(project_root).resolve()
         self.ignore_patterns = self._load_gitignore()
+        # Caches keyed by file path, invalidated by mtime
+        self._parse_cache: Dict[str, _CacheEntry] = {}
+        self._token_cache: Dict[str, _CacheEntry] = {}
+        # Structure cache with TTL (seconds)
+        self._structure_cache: Optional[Tuple[float, Optional[int], str]] = None  # (timestamp, max_depth, result)
+        self._structure_cache_ttl = 30.0  # seconds
+        self._stats_cache: Optional[Tuple[float, Dict]] = None
+        self._stats_cache_ttl = 30.0
         logger.info(f"ContextManager initialized for: {self.project_root}")
 
     def _load_gitignore(self) -> Set[str]:
@@ -156,7 +172,7 @@ class ContextManager:
 
     def estimate_file_tokens(self, file_path: str) -> int:
         """
-        Estimate token count for a file.
+        Estimate token count for a file. Cached by mtime.
 
         Args:
             file_path: Path to the file
@@ -169,10 +185,18 @@ class ContextManager:
             if not path.exists():
                 return 0
 
+            cache_key = str(path)
+            mtime = path.stat().st_mtime
+            cached = self._token_cache.get(cache_key)
+            if cached and cached.mtime == mtime:
+                return cached.data
+
             with open(path, 'r', encoding='utf-8', errors='ignore') as f:
                 content = f.read()
 
-            return self.estimate_tokens(content)
+            tokens = self.estimate_tokens(content)
+            self._token_cache[cache_key] = _CacheEntry(mtime=mtime, data=tokens)
+            return tokens
         except Exception as e:
             logger.warning(f"Failed to estimate tokens for {file_path}: {e}")
             return 0
@@ -180,6 +204,7 @@ class ContextManager:
     def parse_python_file(self, file_path: str) -> Optional[CodeStructure]:
         """
         Parse a Python file and extract structure using AST.
+        Results are cached and invalidated when the file's mtime changes.
 
         Args:
             file_path: Path to Python file (absolute or relative to project root)
@@ -196,6 +221,13 @@ class ContextManager:
 
             if not path.exists() or path.suffix != '.py':
                 return None
+
+            # Check cache
+            cache_key = str(path)
+            mtime = path.stat().st_mtime
+            cached = self._parse_cache.get(cache_key)
+            if cached and cached.mtime == mtime:
+                return cached.data
 
             with open(path, 'r', encoding='utf-8') as f:
                 source = f.read()
@@ -255,12 +287,14 @@ class ContextManager:
                     for alias in node.names:
                         imports.append(f"{module}.{alias.name}" if module else alias.name)
 
-            return CodeStructure(
+            result = CodeStructure(
                 classes=classes,
                 functions=functions,
                 imports=imports,
                 module_docstring=module_docstring
             )
+            self._parse_cache[cache_key] = _CacheEntry(mtime=mtime, data=result)
+            return result
 
         except Exception as e:
             logger.warning(f"Failed to parse {file_path}: {e}")
@@ -335,7 +369,7 @@ class ContextManager:
 
     def get_project_structure(self, max_depth: Optional[int] = None) -> str:
         """
-        Generate a tree view of the project structure.
+        Generate a tree view of the project structure. Cached with TTL.
 
         Args:
             max_depth: Maximum depth to traverse (None for unlimited)
@@ -343,6 +377,12 @@ class ContextManager:
         Returns:
             Tree structure as a formatted string
         """
+        cache_key = max_depth
+        if self._structure_cache is not None:
+            ts, cached_depth, cached_result = self._structure_cache
+            if cached_depth == cache_key and (time.time() - ts) < self._structure_cache_ttl:
+                return cached_result
+
         tree_lines = [f"📁 {self.project_root.name}/"]
 
         def build_tree(directory: Path, prefix: str = "", depth: int = 0):
@@ -376,7 +416,9 @@ class ContextManager:
                 logger.warning(f"Error reading directory {directory}: {e}")
 
         build_tree(self.project_root)
-        return "\n".join(tree_lines)
+        result = "\n".join(tree_lines)
+        self._structure_cache = (time.time(), cache_key, result)
+        return result
 
     def _get_file_icon(self, extension: str) -> str:
         """Get emoji icon for file type."""
@@ -439,11 +481,16 @@ class ContextManager:
 
     def analyze_project(self) -> Dict[str, any]:
         """
-        Analyze the entire project and return statistics.
+        Analyze the entire project and return statistics. Cached with TTL.
 
         Returns:
             Dictionary with project statistics
         """
+        if self._stats_cache is not None:
+            ts, cached_stats = self._stats_cache
+            if (time.time() - ts) < self._stats_cache_ttl:
+                return cached_stats
+
         stats = {
             'total_files': 0,
             'python_files': 0,
@@ -487,6 +534,7 @@ class ContextManager:
         file_sizes.sort(key=lambda x: x[1], reverse=True)
         stats['largest_files'] = file_sizes[:10]
 
+        self._stats_cache = (time.time(), stats)
         return stats
 
     def get_context_for_task(self, task_description: str, max_tokens: int = 8000) -> str:

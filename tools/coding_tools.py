@@ -346,12 +346,13 @@ class CodingTools:
             return f"Error running tests: {str(e)}"
 
     def search_code(self, pattern: str, file_pattern: str = "*.py") -> str:
-        """Search for a pattern in code files"""
+        """Search for a pattern in code files using fixed-string grep."""
         try:
             result = subprocess.run(
-                ['grep', '-r', '-n', pattern, '--include', file_pattern, '.'],
+                ['grep', '-r', '-n', '-F', '--', pattern, '--include', file_pattern, '.'],
                 capture_output=True,
                 text=True,
+                timeout=30,
                 cwd=str(self.workspace_root)
             )
 
@@ -360,6 +361,8 @@ class CodingTools:
                 return "Search results:\n" + "\n".join(lines)
             else:
                 return f"No matches found for pattern: {pattern}"
+        except subprocess.TimeoutExpired:
+            return "Error: Search timed out after 30 seconds"
         except Exception as e:
             return f"Error searching code: {str(e)}"
 

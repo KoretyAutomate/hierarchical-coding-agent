@@ -2,9 +2,13 @@
 Ollama LLM adapter for local models.
 Supports Qwen3, Llama, and other Ollama-compatible models.
 """
+import logging
 import httpx
 from typing import List, Dict, Any, Optional
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type, before_sleep_log
 from .base import BaseLLM, LLMResponse
+
+logger = logging.getLogger(__name__)
 
 
 class OllamaAdapter(BaseLLM):
@@ -37,6 +41,13 @@ class OllamaAdapter(BaseLLM):
         self.timeout = timeout
         self.client = httpx.Client(timeout=timeout)
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=30),
+        retry=retry_if_exception_type((httpx.RequestError, httpx.HTTPStatusError)),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+        reraise=True,
+    )
     def generate(
         self,
         messages: List[Dict[str, str]],
@@ -101,9 +112,13 @@ class OllamaAdapter(BaseLLM):
             )
 
         except httpx.HTTPStatusError as e:
-            raise Exception(f"Ollama API error: {e.response.status_code} - {e.response.text}")
+            # Let retryable HTTP errors propagate for tenacity
+            logger.warning(f"Ollama API error: {e.response.status_code} - {e.response.text[:200]}")
+            raise
         except httpx.RequestError as e:
-            raise Exception(f"Ollama connection error: {str(e)}")
+            # Let connection errors propagate for tenacity
+            logger.warning(f"Ollama connection error: {e}")
+            raise
         except Exception as e:
             raise Exception(f"Ollama generate error: {str(e)}")
 

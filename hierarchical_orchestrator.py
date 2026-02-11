@@ -162,22 +162,22 @@ class HierarchicalOrchestrator:
     def call_qwen3_lead(self, prompt: str, system_prompt: str = None) -> str:
         """
         Call Project Lead LLM for decision-making and planning.
-        Now uses LLM abstraction layer.
+        Now uses LLM abstraction layer with retry/backoff.
+
+        Raises:
+            Exception: If the LLM call fails after retries.
         """
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
-        try:
-            response = self.lead_llm.generate(
-                messages=messages,
-                temperature=self.config.llm.temperature,
-                max_tokens=self.config.llm.max_tokens
-            )
-            return response.content
-        except Exception as e:
-            return f"Error calling Lead LLM: {e}"
+        response = self.lead_llm.generate(
+            messages=messages,
+            temperature=self.config.llm.temperature,
+            max_tokens=self.config.llm.max_tokens
+        )
+        return response.content
 
     def call_qwen3_coder(self, prompt: str, system_prompt: str = None) -> Dict[str, Any]:
         """

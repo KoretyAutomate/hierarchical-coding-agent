@@ -174,6 +174,88 @@ http://localhost:8080
 # Login with credentials shown in terminal
 ```
 
+## Writing Effective Task Prompts
+
+The coding agent includes a **self-reflection system** that scores prompt quality after each task. Understanding these scoring dimensions helps you write prompts that lead to efficient execution.
+
+### Scoring Dimensions (1-5 scale)
+
+| Dimension | 1 (Poor) | 3 (Adequate) | 5 (Excellent) |
+|-----------|----------|--------------|---------------|
+| **Specificity** | "Fix the bug" | "Fix the auth bug" | "Fix the 401 error in `api/auth.py:login()`" |
+| **Scope Clarity** | "Improve the code" | "Refactor the API module" | "Extract `validate_token()` from `api/auth.py` into `api/validators.py`" |
+| **Context Sufficiency** | No background given | Some context provided | Relevant files, error messages, and constraints included |
+| **Actionability** | Vague desired outcome | General direction clear | Success criteria explicitly stated |
+
+### Recommended Prompt Template
+
+```
+[ACTION] [TARGET] in [FILE/SCOPE].
+Context: [relevant background]
+Files: [specific paths]
+Expected: [what success looks like]
+Constraints: [what NOT to change]
+```
+
+### Before/After Examples
+
+**Vague** (score ~1.5):
+> Fix the search feature
+
+**Improved** (score ~4.5):
+> Fix the empty results bug in `search/engine.py:execute_query()`. The function returns `[]` when the query contains special characters. Expected: queries like "C++" return valid results. Constraints: don't change the search index format.
+
+---
+
+**Vague** (score ~2.0):
+> Add tests
+
+**Improved** (score ~4.5):
+> Add unit tests for `core/config.py:load_config()` covering: missing file (should raise FileNotFoundError), invalid YAML (should raise ValueError), and valid config (should return Config object). Place tests in `tests/test_config.py`.
+
+---
+
+**Vague** (score ~1.0):
+> Make it faster
+
+**Improved** (score ~4.0):
+> Optimize `data/loader.py:load_dataset()` — it currently reads the entire CSV into memory. Use chunked reading with pandas `chunksize=10000`. Expected: memory usage under 500MB for the 2GB dataset. Files: `data/loader.py`.
+
+### Anti-patterns
+
+- **No file paths** — Forces the agent to search, wasting iterations
+- **Ambiguous scope** — "Improve error handling" could touch every file
+- **Missing success criteria** — Agent can't tell when it's done
+- **Implicit context** — Don't assume the agent knows what changed recently
+
+### Using `--files` for Context
+
+Automatically inject file contents as context:
+
+```bash
+python3 delegate.py "Fix the validation logic" --files src/validators.py,src/models.py --now
+```
+
+### Using `--reflect` and `--lessons`
+
+After tasks complete, review reflection data:
+
+```bash
+# View reflection for a specific task
+python3 delegate.py --reflect task_1234567890
+
+# View accumulated lessons learned
+python3 delegate.py --lessons
+```
+
+### Using `--template`
+
+Templates enforce good prompt structure:
+
+```bash
+python3 delegate.py --template refactor_method "file_path=foo.py method_name=bar" --now
+```
+
 ## 📦 Core Components
 
 ### 1. Hierarchical Orchestrator

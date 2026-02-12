@@ -61,6 +61,12 @@ examples:
     parser.add_argument('--self-update', action='store_true',
                         help='Target the coding agent itself (with backup)')
 
+    # Reflection commands
+    parser.add_argument('--reflect', metavar='TASK_ID',
+                        help='View reflection for a completed task')
+    parser.add_argument('--lessons', action='store_true',
+                        help='View aggregated lessons learned')
+
     # Existing query commands
     parser.add_argument('--execute', action='store_true',
                         help='Execute next task in queue')
@@ -177,6 +183,28 @@ def main():
 
     # Import orchestrator lazily to keep --help fast
     from orchestrator import TaskOrchestrator
+
+    # --- Reflection commands ---
+    if args.reflect:
+        from core.reflection import ReflectionEngine
+        engine = ReflectionEngine(llm=None, storage_dir=Path("reflections"))
+        r = engine.get_reflection(args.reflect)
+        if r:
+            print(json.dumps(r, indent=2))
+        else:
+            print(f"No reflection found for {args.reflect}")
+        return
+
+    if args.lessons:
+        from core.reflection import ReflectionEngine
+        engine = ReflectionEngine(llm=None, storage_dir=Path("reflections"))
+        lessons = engine.get_lessons()
+        if lessons:
+            for lesson in lessons:
+                print(f"  - {lesson}")
+        else:
+            print("No lessons accumulated yet.")
+        return
 
     # --- Query commands (no task needed) ---
     if args.status:

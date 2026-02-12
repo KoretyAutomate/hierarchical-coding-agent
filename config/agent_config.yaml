@@ -27,7 +27,13 @@ workspace:
   project_root: "/home/korety/Project/DR_2_Podcast"
   sandbox_dir: "/tmp/claude-1000/-home-korety/d1afe9ed-f197-46ed-90e6-23e9d26332c3/scratchpad"
 
+# Lead model is configured via .env (ORCH_LEAD_MODEL, ORCH_LEAD_BASE_URL)
 orchestration:
   task_queue_path: "/home/korety/coding-agent/tasks/queue.json"
   completed_tasks_path: "/home/korety/coding-agent/tasks/completed.json"
   logs_path: "/home/korety/coding-agent/logs"
+
+reflection:
+  enabled: true
+  storage_path: "reflections"
+  max_reflection_tokens: 2048

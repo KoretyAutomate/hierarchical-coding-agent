@@ -140,7 +140,8 @@ class CodingAgent:
                     "success": False,
                     "result": f"LLM Error: {str(e)}",
                     "iterations": iterations,
-                    "tool_calls": all_tool_calls
+                    "tool_calls": all_tool_calls,
+                    "messages": messages,
                 }
 
             # Build assistant message from LLMResponse
@@ -168,7 +169,8 @@ class CodingAgent:
                     "result": final_content,
                     "iterations": iterations,
                     "tool_calls": all_tool_calls,
-                    "usage": response.usage
+                    "usage": response.usage,
+                    "messages": messages,
                 }
 
             # Execute tool calls
@@ -209,7 +211,8 @@ class CodingAgent:
             "success": False,
             "result": "Max iterations reached without completion",
             "iterations": iterations,
-            "tool_calls": all_tool_calls
+            "tool_calls": all_tool_calls,
+            "messages": messages,
         }
 
 

@@ -249,6 +249,25 @@ class TaskOrchestrator:
             task['completed_at'] = datetime.now().isoformat()
             task['result'] = result
 
+            # Post-task reflection
+            reflection_cfg = self.config.get('reflection', {})
+            if reflection_cfg.get('enabled', True) and result.get('success') is not None:
+                try:
+                    from core.reflection import ReflectionEngine
+                    engine = ReflectionEngine(
+                        llm=self._create_llm(),
+                        storage_dir=Path(reflection_cfg.get('storage_path', 'reflections')),
+                    )
+                    reflection = engine.reflect(
+                        task_data=task,
+                        messages=result.get('messages', []),
+                        tool_calls=result.get('tool_calls', []),
+                        max_tokens=reflection_cfg.get('max_reflection_tokens', 2048),
+                    )
+                    task['reflection'] = reflection
+                except Exception as e:
+                    task['reflection_error'] = str(e)
+
             # If dry_run, collect pending diffs and reject them
             if dry_run:
                 pending = agent.tools.list_pending_changes()
@@ -328,6 +347,25 @@ class TaskOrchestrator:
                 task['status'] = 'completed' if result['success'] else 'failed'
                 task['completed_at'] = datetime.now().isoformat()
                 task['result'] = result
+
+                # Post-task reflection
+                reflection_cfg = self.config.get('reflection', {})
+                if reflection_cfg.get('enabled', True) and result.get('success') is not None:
+                    try:
+                        from core.reflection import ReflectionEngine
+                        engine = ReflectionEngine(
+                            llm=self._create_llm(),
+                            storage_dir=Path(reflection_cfg.get('storage_path', 'reflections')),
+                        )
+                        reflection = engine.reflect(
+                            task_data=task,
+                            messages=result.get('messages', []),
+                            tool_calls=result.get('tool_calls', []),
+                            max_tokens=reflection_cfg.get('max_reflection_tokens', 2048),
+                        )
+                        task['reflection'] = reflection
+                    except Exception as e_ref:
+                        task['reflection_error'] = str(e_ref)
             except Exception as e:
                 task['status'] = 'error'
                 task['error'] = str(e)

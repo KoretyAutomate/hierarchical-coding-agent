@@ -17,12 +17,18 @@ class CodingTools:
     Supports optional sandboxed execution via Docker for safety.
     """
 
+    DEFAULT_ALLOWED_COMMANDS = [
+        "python3", "pytest", "pip", "git", "ls", "grep", "find", "npm", "node",
+    ]
+
     def __init__(
         self,
         workspace_root: str,
         use_sandbox: bool = False,
         sandbox_config: Optional[Dict[str, Any]] = None,
-        enable_diff_review: bool = True
+        enable_diff_review: bool = True,
+        allowed_commands: Optional[list] = None,
+        backup_callback=None,
     ):
         """
         Initialize coding tools.
@@ -32,12 +38,16 @@ class CodingTools:
             use_sandbox: Whether to use Docker sandbox for execution
             sandbox_config: Optional sandbox configuration
             enable_diff_review: Whether to enable diff review before file changes
+            allowed_commands: Whitelist for run_command (defaults to DEFAULT_ALLOWED_COMMANDS)
+            backup_callback: Optional callable(file_path) invoked before write/edit
         """
         self.workspace_root = Path(workspace_root)
         self.use_sandbox = use_sandbox
         self.sandbox = None
         self.enable_diff_review = enable_diff_review
         self._pending_diffs: Dict[str, Any] = {}
+        self.allowed_commands = allowed_commands or self.DEFAULT_ALLOWED_COMMANDS
+        self._backup_callback = backup_callback
 
         # Initialize DiffEngine for code review
         self.diff_engine = DiffEngine(str(self.workspace_root))
@@ -114,6 +124,9 @@ class CodingTools:
             # Write directly without review
             full_path = self.workspace_root / file_path
             try:
+                # Backup callback before modification
+                if self._backup_callback and full_path.exists():
+                    self._backup_callback(str(full_path))
                 full_path.parent.mkdir(parents=True, exist_ok=True)
                 with open(full_path, 'w', encoding='utf-8') as f:
                     f.write(content)
@@ -143,6 +156,10 @@ class CodingTools:
 
             if old_content not in content:
                 return f"Error: old_content not found in {file_path}"
+
+            # Backup callback before modification
+            if self._backup_callback:
+                self._backup_callback(str(full_path))
 
             new_file_content = content.replace(old_content, new_content, 1)
 
@@ -379,6 +396,112 @@ class CodingTools:
             return f"Error searching code: {str(e)}"
 
 
+    def set_backup_callback(self, callback):
+        """Set or replace the backup callback invoked before file modifications."""
+        self._backup_callback = callback
+
+    # ---- Git tools ----
+
+    def git_status(self) -> str:
+        """Show git status of the workspace (porcelain format)."""
+        try:
+            result = subprocess.run(
+                ['git', 'status', '--porcelain'],
+                capture_output=True, text=True, timeout=15,
+                cwd=str(self.workspace_root),
+            )
+            output = result.stdout.strip()
+            if result.returncode != 0:
+                return f"git status error: {result.stderr.strip()}"
+            return output if output else "(working tree clean)"
+        except Exception as e:
+            return f"Error running git status: {e}"
+
+    def git_diff(self, file_path: str = None) -> str:
+        """Show git diff, optionally for a specific file."""
+        cmd = ['git', 'diff']
+        if file_path:
+            cmd.append(file_path)
+        try:
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=30,
+                cwd=str(self.workspace_root),
+            )
+            output = result.stdout.strip()
+            if result.returncode != 0:
+                return f"git diff error: {result.stderr.strip()}"
+            return output if output else "(no diff)"
+        except Exception as e:
+            return f"Error running git diff: {e}"
+
+    def git_add(self, file_paths: str) -> str:
+        """Stage files for commit. file_paths is space-separated list."""
+        paths = file_paths.split()
+        if not paths:
+            return "Error: no file paths provided"
+        try:
+            result = subprocess.run(
+                ['git', 'add'] + paths,
+                capture_output=True, text=True, timeout=15,
+                cwd=str(self.workspace_root),
+            )
+            if result.returncode != 0:
+                return f"git add error: {result.stderr.strip()}"
+            return f"Staged: {', '.join(paths)}"
+        except Exception as e:
+            return f"Error running git add: {e}"
+
+    def git_commit(self, message: str) -> str:
+        """Create a git commit with the given message."""
+        try:
+            result = subprocess.run(
+                ['git', 'commit', '-m', message],
+                capture_output=True, text=True, timeout=30,
+                cwd=str(self.workspace_root),
+            )
+            if result.returncode != 0:
+                return f"git commit error: {result.stderr.strip()}"
+            return result.stdout.strip()
+        except Exception as e:
+            return f"Error running git commit: {e}"
+
+    # ---- General command execution ----
+
+    def run_command(self, command: str, timeout: int = 30) -> str:
+        """
+        Run an arbitrary shell command if it's in the allowed_commands whitelist.
+
+        Args:
+            command: Shell command string
+            timeout: Timeout in seconds (default 30)
+
+        Returns:
+            stdout + stderr + exit code
+        """
+        # Extract base command for validation
+        base_cmd = command.strip().split()[0] if command.strip() else ""
+        if base_cmd not in self.allowed_commands:
+            return f"Error: command '{base_cmd}' not in allowed list: {self.allowed_commands}"
+
+        try:
+            result = subprocess.run(
+                command, shell=True,
+                capture_output=True, text=True, timeout=timeout,
+                cwd=str(self.workspace_root),
+            )
+            output = ""
+            if result.stdout:
+                output += result.stdout
+            if result.stderr:
+                output += f"\nSTDERR:\n{result.stderr}"
+            output += f"\nExit code: {result.returncode}"
+            return output.strip()
+        except subprocess.TimeoutExpired:
+            return f"Error: command timed out after {timeout}s"
+        except Exception as e:
+            return f"Error running command: {e}"
+
+
 def get_tool_schemas():
     """Return tool schemas for LLM function calling"""
     return [
@@ -495,6 +618,88 @@ def get_tool_schemas():
                         "file_pattern": {"type": "string", "description": "File pattern (default: '*.py')"}
                     },
                     "required": ["pattern"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "git_status",
+                "description": "Show git status of the workspace (porcelain format)",
+                "parameters": {
+                    "type": "object",
+                    "properties": {}
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "git_diff",
+                "description": "Show git diff, optionally for a specific file",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "file_path": {
+                            "type": "string",
+                            "description": "Optional file path to diff"
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "git_add",
+                "description": "Stage files for git commit",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "file_paths": {
+                            "type": "string",
+                            "description": "Space-separated file paths to stage"
+                        }
+                    },
+                    "required": ["file_paths"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "git_commit",
+                "description": "Create a git commit with a message",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "message": {
+                            "type": "string",
+                            "description": "Commit message"
+                        }
+                    },
+                    "required": ["message"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "run_command",
+                "description": "Run an allowed shell command (python3, pytest, pip, git, ls, grep, find, npm, node)",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "command": {
+                            "type": "string",
+                            "description": "Shell command to execute"
+                        },
+                        "timeout": {
+                            "type": "integer",
+                            "description": "Timeout in seconds (default: 30)"
+                        }
+                    },
+                    "required": ["command"]
                 }
             }
         }

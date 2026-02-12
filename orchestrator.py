@@ -1,23 +1,33 @@
 """
-Orchestration layer for Claude Code to delegate tasks to the coding agent
+Orchestration layer for Claude Code to delegate tasks to the coding agent.
+
+Supports workspace overrides, dry-run mode, parallel execution, and backup callbacks.
 """
 import json
 import time
+import shutil
+import threading
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, List, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import yaml
 import sys
 
 from agents.coding_agent import CodingAgent
+from tools.coding_tools import CodingTools
+from core.llm import BaseLLM
 
 
 class TaskOrchestrator:
     """
-    Interface for Claude Code to delegate tasks to the local coding agent
+    Interface for Claude Code to delegate tasks to the local coding agent.
     """
 
-    def __init__(self, config_path: str = "/home/korety/Project/coding-agent/config/agent_config.yaml"):
+    def __init__(self, config_path: str = None):
+        if config_path is None:
+            config_path = str(Path(__file__).parent / "config" / "agent_config.yaml")
+
         with open(config_path) as f:
             self.config = yaml.safe_load(f)
 
@@ -36,31 +46,120 @@ class TaskOrchestrator:
         if not self.completed_path.exists():
             self._save_completed([])
 
-        self.agent = None
+        # Thread-safe lock for file writes in parallel mode
+        self._file_lock = threading.Lock()
+
+    def _create_llm(self) -> BaseLLM:
+        """Create an LLM instance from config."""
+        llm_config = self.config.get('llm', {})
+        provider = llm_config.get('provider', 'ollama')
+
+        if provider == 'ollama':
+            from core.llm import OllamaAdapter
+            return OllamaAdapter(
+                model_name=llm_config.get('model', 'frob/qwen3-coder-next'),
+                base_url=llm_config.get('base_url', 'http://localhost:11434/v1'),
+                timeout=llm_config.get('timeout', 300.0),
+            )
+        elif provider == 'anthropic':
+            from core.llm import AnthropicAdapter
+            return AnthropicAdapter(
+                model_name=llm_config.get('model', 'claude-3-5-sonnet-20241022'),
+                api_key=llm_config.get('api_key'),
+            )
+        else:
+            raise ValueError(f"Unknown LLM provider: {provider}")
+
+    def _create_agent(
+        self,
+        workspace_root: str = None,
+        dry_run: bool = False,
+        backup_dir: str = None,
+    ) -> CodingAgent:
+        """Create a CodingAgent with proper LLM and tools configuration."""
+        llm = self._create_llm()
+        ws = workspace_root or self.config.get('workspace', {}).get(
+            'project_root', str(Path(__file__).parent)
+        )
+
+        # Build backup callback if backup_dir is set
+        backup_callback = None
+        if backup_dir:
+            backup_path = Path(backup_dir)
+
+            def _backup_file(file_path_str: str):
+                src = Path(file_path_str)
+                if src.exists():
+                    ws_path = Path(ws)
+                    try:
+                        rel = src.relative_to(ws_path)
+                    except ValueError:
+                        rel = src.name
+                    dst = backup_path / rel
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src, dst)
+
+            backup_callback = _backup_file
+
+        llm_config = self.config.get('llm', {})
+        agent = CodingAgent(
+            llm=llm,
+            workspace_root=ws,
+            max_iterations=self.config.get('orchestration', {}).get('max_iterations', 10),
+            temperature=llm_config.get('temperature', 0.2),
+            max_tokens=llm_config.get('max_tokens', 4096),
+        )
+
+        # Configure tools
+        if dry_run:
+            agent.tools.enable_diff_review = True
+        if backup_callback:
+            agent.tools.set_backup_callback(backup_callback)
+
+        return agent
 
     def _load_queue(self) -> List[Dict]:
         """Load task queue"""
-        with open(self.task_queue_path, 'r') as f:
-            return json.load(f)
+        with self._file_lock:
+            with open(self.task_queue_path, 'r') as f:
+                return json.load(f)
 
     def _save_queue(self, queue: List[Dict]):
         """Save task queue"""
-        with open(self.task_queue_path, 'w') as f:
-            json.dump(queue, f, indent=2)
+        with self._file_lock:
+            with open(self.task_queue_path, 'w') as f:
+                json.dump(queue, f, indent=2)
 
     def _load_completed(self) -> List[Dict]:
         """Load completed tasks"""
-        with open(self.completed_path, 'r') as f:
-            return json.load(f)
+        with self._file_lock:
+            with open(self.completed_path, 'r') as f:
+                return json.load(f)
 
     def _save_completed(self, completed: List[Dict]):
         """Save completed tasks"""
-        with open(self.completed_path, 'w') as f:
-            json.dump(completed, f, indent=2)
+        with self._file_lock:
+            with open(self.completed_path, 'w') as f:
+                json.dump(completed, f, indent=2)
 
-    def add_task(self, description: str, context: Optional[str] = None, priority: str = "normal") -> str:
+    def _append_completed(self, task: Dict):
+        """Thread-safe append a single task to completed list."""
+        with self._file_lock:
+            with open(self.completed_path, 'r') as f:
+                completed = json.load(f)
+            completed.append(task)
+            with open(self.completed_path, 'w') as f:
+                json.dump(completed, f, indent=2)
+
+    def add_task(
+        self,
+        description: str,
+        context: Optional[str] = None,
+        priority: str = "normal",
+        workspace_override: Optional[str] = None,
+    ) -> str:
         """
-        Add a task to the queue
+        Add a task to the queue.
         Returns: task_id
         """
         task_id = f"task_{int(time.time() * 1000)}"
@@ -72,15 +171,17 @@ class TaskOrchestrator:
             "priority": priority,
             "status": "queued",
             "created_at": datetime.now().isoformat(),
-            "assigned_to": "coding_agent"
+            "assigned_to": "coding_agent",
         }
+        if workspace_override:
+            task["workspace_override"] = workspace_override
 
         queue = self._load_queue()
         queue.append(task)
         self._save_queue(queue)
 
         print(f"✓ Task added: {task_id}")
-        print(f"  Description: {description}")
+        print(f"  Description: {description[:120]}")
 
         return task_id
 
@@ -100,10 +201,15 @@ class TaskOrchestrator:
 
         return None
 
-    def execute_next_task(self) -> Optional[Dict]:
+    def execute_next_task(
+        self,
+        workspace_override: Optional[str] = None,
+        dry_run: bool = False,
+        backup_dir: Optional[str] = None,
+    ) -> Optional[Dict]:
         """
-        Execute the next task in the queue
-        Returns: task result or None if queue is empty
+        Execute the next task in the queue.
+        Returns: task result or None if queue is empty.
         """
         queue = self._load_queue()
 
@@ -119,16 +225,22 @@ class TaskOrchestrator:
         print(f"EXECUTING TASK: {task['task_id']}")
         print(f"{'='*70}")
 
-        # Initialize agent if needed
-        if not self.agent:
-            self.agent = CodingAgent(self.config)
+        # Determine workspace
+        ws = workspace_override or task.get('workspace_override')
+
+        # Create agent for this task
+        agent = self._create_agent(
+            workspace_root=ws,
+            dry_run=dry_run,
+            backup_dir=backup_dir,
+        )
 
         # Execute task
         task['status'] = 'running'
         task['started_at'] = datetime.now().isoformat()
 
         try:
-            result = self.agent.run_task(
+            result = agent.run_task(
                 task_description=task['description'],
                 context=task.get('context')
             )
@@ -137,10 +249,14 @@ class TaskOrchestrator:
             task['completed_at'] = datetime.now().isoformat()
             task['result'] = result
 
+            # If dry_run, collect pending diffs and reject them
+            if dry_run:
+                pending = agent.tools.list_pending_changes()
+                task['dry_run_diffs'] = pending
+                agent.tools.cleanup_pending_diffs()
+
             # Save to completed
-            completed = self._load_completed()
-            completed.append(task)
-            self._save_completed(completed)
+            self._append_completed(task)
 
             # Save detailed log
             log_file = self.logs_path / f"{task['task_id']}.json"
@@ -149,6 +265,8 @@ class TaskOrchestrator:
 
             print(f"\n{'='*70}")
             print(f"TASK {'COMPLETED' if result['success'] else 'FAILED'}: {task['task_id']}")
+            if dry_run:
+                print(f"(DRY RUN — no changes applied)")
             print(f"{'='*70}\n")
 
             return task
@@ -158,20 +276,82 @@ class TaskOrchestrator:
             task['error'] = str(e)
             task['completed_at'] = datetime.now().isoformat()
 
-            completed = self._load_completed()
-            completed.append(task)
-            self._save_completed(completed)
+            self._append_completed(task)
 
             print(f"\n✗ Task error: {str(e)}\n")
             return task
 
     def execute_all_tasks(self):
-        """Execute all tasks in the queue"""
+        """Execute all tasks in the queue sequentially."""
         while True:
             result = self.execute_next_task()
             if result is None:
                 break
             time.sleep(1)  # Brief pause between tasks
+
+    def execute_parallel(self, max_workers: int = 2) -> List[Dict]:
+        """
+        Execute all queued tasks in parallel using a thread pool.
+        Each task gets its own CodingAgent instance.
+
+        Args:
+            max_workers: Maximum concurrent tasks
+
+        Returns:
+            List of task result dicts
+        """
+        queue = self._load_queue()
+        if not queue:
+            print("Queue is empty")
+            return []
+
+        # Take all tasks from queue
+        tasks = list(queue)
+        self._save_queue([])
+
+        print(f"\nExecuting {len(tasks)} tasks with {max_workers} workers\n")
+
+        results = []
+
+        def _run_task(task: Dict) -> Dict:
+            ws = task.get('workspace_override')
+            agent = self._create_agent(workspace_root=ws)
+
+            task['status'] = 'running'
+            task['started_at'] = datetime.now().isoformat()
+
+            try:
+                result = agent.run_task(
+                    task_description=task['description'],
+                    context=task.get('context'),
+                )
+                task['status'] = 'completed' if result['success'] else 'failed'
+                task['completed_at'] = datetime.now().isoformat()
+                task['result'] = result
+            except Exception as e:
+                task['status'] = 'error'
+                task['error'] = str(e)
+                task['completed_at'] = datetime.now().isoformat()
+
+            # Thread-safe save
+            self._append_completed(task)
+
+            # Save log
+            log_file = self.logs_path / f"{task['task_id']}.json"
+            with open(log_file, 'w') as f:
+                json.dump(task, f, indent=2)
+
+            return task
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(_run_task, t): t for t in tasks}
+            for future in as_completed(futures):
+                task_result = future.result()
+                results.append(task_result)
+                print(f"  {task_result['task_id']}: {task_result['status']}")
+
+        print(f"\nAll {len(results)} tasks finished.\n")
+        return results
 
     def list_queue(self) -> List[Dict]:
         """List all queued tasks"""
@@ -219,6 +399,10 @@ def main():
     subparsers.add_parser('execute', help='Execute next task in queue')
     subparsers.add_parser('execute-all', help='Execute all tasks in queue')
 
+    # Parallel
+    parallel_parser = subparsers.add_parser('parallel', help='Execute tasks in parallel')
+    parallel_parser.add_argument('--workers', type=int, default=2, help='Number of workers')
+
     # Status
     status_parser = subparsers.add_parser('status', help='Get task status')
     status_parser.add_argument('task_id', help='Task ID')
@@ -244,6 +428,9 @@ def main():
 
     elif args.command == 'execute-all':
         orchestrator.execute_all_tasks()
+
+    elif args.command == 'parallel':
+        orchestrator.execute_parallel(max_workers=args.workers)
 
     elif args.command == 'status':
         status = orchestrator.get_task_status(args.task_id)

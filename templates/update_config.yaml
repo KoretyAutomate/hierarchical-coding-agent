@@ -1,0 +1,18 @@
+name: update_config
+description: Add or modify configuration options
+variables:
+  - {name: config_file, required: true, description: "Configuration file to update"}
+  - {name: setting_name, required: true, description: "Name of the setting to add/modify"}
+  - {name: setting_value, required: true, description: "New value for the setting"}
+  - {name: description, required: false, default: "", description: "Description of the setting"}
+template: |
+  Update configuration in `{config_file}`.
+  Setting: `{setting_name}` = `{setting_value}`
+  Description: {description}
+
+  Steps:
+  1. Read the current configuration file
+  2. Identify where the setting should be added or modified
+  3. Make the change, preserving existing formatting and comments
+  4. Verify the configuration file is still valid
+  5. Check if any code references this setting and update if needed

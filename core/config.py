@@ -173,6 +173,16 @@ class OrchestrationConfig(BaseSettings):
         gt=0,
         description="Max tokens for project context injected into LLM prompts"
     )
+    templates_dir: Path = Field(
+        default=Path("templates"),
+        description="Directory containing task templates"
+    )
+    default_parallel_workers: int = Field(
+        default=2,
+        gt=0,
+        le=8,
+        description="Default number of parallel workers for task execution"
+    )
 
     # Hierarchical agent roles
     pm_model: str = Field(
@@ -218,8 +228,14 @@ class SecurityConfig(BaseSettings):
         description="Maximum execution time in seconds"
     )
     allowed_commands: list[str] = Field(
-        default_factory=lambda: ["python3", "pytest", "pip", "git"],
-        description="Allowed commands in sandbox"
+        default_factory=lambda: [
+            "python3", "pytest", "pip", "git", "ls", "grep", "find", "npm", "node",
+        ],
+        description="Allowed commands for run_command tool"
+    )
+    enable_self_update: bool = Field(
+        default=False,
+        description="Allow the agent to modify its own source code"
     )
 
     model_config = SettingsConfigDict(

@@ -1,0 +1,16 @@
+name: refactor_method
+description: Refactor a method for improved readability and maintainability
+variables:
+  - {name: file_path, required: true, description: "File containing the method"}
+  - {name: method_name, required: true, description: "Method to refactor"}
+  - {name: reason, required: false, default: "improve code quality", description: "Reason for refactoring"}
+template: |
+  Refactor the method `{method_name}` in `{file_path}`.
+  Reason: {reason}.
+
+  Steps:
+  1. Read the current implementation of `{method_name}`
+  2. Identify complexity, duplication, or readability issues
+  3. Refactor for clarity while preserving behavior
+  4. Run existing tests to verify nothing is broken
+  5. Report what was changed and why

@@ -1,0 +1,17 @@
+name: add_error_handling
+description: Add proper error handling to a function or module
+variables:
+  - {name: file_path, required: true, description: "File to add error handling to"}
+  - {name: function_name, required: false, default: "", description: "Specific function (empty = whole file)"}
+  - {name: error_types, required: false, default: "ValueError, TypeError, IOError", description: "Exception types to handle"}
+template: |
+  Add robust error handling to `{file_path}`.
+  {function_name}
+  Error types to consider: {error_types}.
+
+  Steps:
+  1. Read the file and identify error-prone operations
+  2. Add try/except blocks with specific exception types
+  3. Add meaningful error messages that aid debugging
+  4. Ensure errors are logged or propagated appropriately
+  5. Run tests to verify error handling works correctly

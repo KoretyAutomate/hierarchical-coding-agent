@@ -1,0 +1,17 @@
+name: add_tests
+description: Add unit tests for a module or function
+variables:
+  - {name: source_file, required: true, description: "Source file to write tests for"}
+  - {name: test_file, required: false, default: "", description: "Test file path (auto-generated if empty)"}
+  - {name: focus, required: false, default: "all public functions", description: "What to focus testing on"}
+template: |
+  Write unit tests for `{source_file}`.
+  Test file: {test_file}
+  Focus: {focus}.
+
+  Steps:
+  1. Read the source file and identify public functions/methods
+  2. Create or update the test file with pytest-style tests
+  3. Cover normal cases, edge cases, and error cases
+  4. Use descriptive test names that explain expected behavior
+  5. Run the tests and ensure they all pass

@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 
-An intelligent, autonomous coding agent system that combines human oversight (Claude Code) with AI-powered project management (Qwen3-32B) and implementation (Qwen3-Coder) for end-to-end software development automation.
+An intelligent, autonomous coding agent system that combines human oversight (Claude Code) with AI-powered project management and implementation using local LLMs for end-to-end software development automation. Works with any OpenAI-compatible LLM backend (Ollama, vLLM, llama.cpp, etc.) — we recommend models with strong code generation and instruction-following capabilities (20B+ parameters or equivalent quality).
 
 ## ✨ Features
 
@@ -36,7 +36,7 @@ An intelligent, autonomous coding agent system that combines human oversight (Cl
                             │ Delegates tasks
                             ↓
 ┌─────────────────────────────────────────────────────────────┐
-│        TIER 2: Project Lead (Qwen3-32B)                     │
+│        TIER 2: Project Lead (Local LLM — 20B+)               │
 │  • Creates implementation plans                              │
 │  • Reviews code quality                                      │
 │  • Makes technical decisions                                │
@@ -44,7 +44,7 @@ An intelligent, autonomous coding agent system that combines human oversight (Cl
                             │ Assigns work
                             ↓
 ┌─────────────────────────────────────────────────────────────┐
-│     TIER 3: Developer (Qwen3-Coder)                         │
+│     TIER 3: Developer (Local LLM — code-specialized)         │
 │  • Implements features                                       │
 │  • Writes tests                                              │
 │  • Follows best practices                                   │
@@ -56,7 +56,7 @@ An intelligent, autonomous coding agent system that combines human oversight (Cl
 ### Prerequisites
 
 - Python 3.8+
-- Ollama (for local LLM serving)
+- An OpenAI-compatible LLM backend (Ollama, vLLM, llama.cpp server, etc.)
 - Git
 - Basic understanding of software development
 
@@ -75,16 +75,21 @@ cd hierarchical-coding-agent
 pip install -r requirements.txt
 ```
 
-3. **Start Ollama server**
+3. **Start your LLM backend**
 
 ```bash
-./start_ollama_server.sh
+# Example with Ollama:
+ollama serve
+ollama pull your-lead-model      # e.g. qwen3:32b, deepseek-coder-v2, codestral
+ollama pull your-coder-model     # e.g. qwen3-coder, deepseek-coder, starcoder2
+
+# Example with vLLM:
+python -m vllm.entrypoints.openai.api_server --model your-model --port 8000
 ```
 
-This will:
-- Start Ollama on port 11434
-- Pull Qwen3:32b (Project Lead model)
-- Pull Qwen3-Coder:latest (Developer model)
+Any model served on an OpenAI-compatible endpoint works. For best results, use:
+- **Lead model**: A strong reasoning model (20B+ params) for planning and review
+- **Coder model**: A code-specialized model for implementation
 
 4. **Configure your project**
 
@@ -97,9 +102,11 @@ workspace:
 orchestration:
   logs_path: "logs"
 
-models:
-  lead_model: "qwen3:32b"
-  coder_model: "qwen3-coder:latest"
+llm:
+  model_name: "your-model-name"          # Model served by your backend
+  base_url: "http://localhost:11434/v1"   # OpenAI-compatible endpoint
+  temperature: 0.2
+  max_tokens: 4096
 ```
 
 ### Basic Usage
@@ -113,11 +120,11 @@ models:
 python3 hierarchical_orchestrator.py "Add error handling to the API"
 
 # The system will:
-# 1. Qwen3 Lead creates implementation plan
+# 1. Lead model creates implementation plan
 # 2. Returns plan for approval (caller handles approval)
 # 3. After approval, continue_after_plan_approval() resumes
-# 4. Qwen3-Coder implements the code
-# 5. Qwen3 Lead reviews implementation
+# 4. Coder model implements the code
+# 5. Lead model reviews implementation
 # 6. Output verification runs automatically
 # 7. Returns results for approval (caller creates PR)
 ```
@@ -132,10 +139,10 @@ python3 hierarchical_orchestrator.py --interactive "Add error handling to the AP
 python3 hierarchical_orchestrator.py -i "Add error handling to the API"
 
 # The system will:
-# 1. Qwen3 Lead creates implementation plan
+# 1. Lead model creates implementation plan
 # 2. Asks YOU: "Do you approve this plan? (yes/no/edit)"
-# 3. Qwen3-Coder implements the code
-# 4. Qwen3 Lead reviews implementation
+# 3. Coder model implements the code
+# 4. Lead model reviews implementation
 # 5. Output verification runs automatically
 # 6. Asks YOU: "Do you approve the implementation? (yes/no/retry)"
 # 7. Completes workflow and saves log
@@ -404,10 +411,12 @@ orchestration:
   max_retries: 3
   timeout: 300
 
-models:
-  lead_model: "qwen3:32b"
-  coder_model: "qwen3-coder:latest"
-  base_url: "http://localhost:11434/v1"
+llm:
+  model_name: "your-model-name"           # Any OpenAI-compatible model
+  base_url: "http://localhost:11434/v1"    # Ollama, vLLM, llama.cpp, etc.
+  temperature: 0.2
+  max_tokens: 4096
+  timeout: 300
 
 tools:
   enabled:
@@ -553,8 +562,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🙏 Acknowledgments
 
-- Built with [Qwen3](https://github.com/QwenLM/Qwen) models
-- Powered by [Ollama](https://ollama.ai/) for local LLM serving
+- Works with any OpenAI-compatible LLM backend ([Ollama](https://ollama.ai/), [vLLM](https://github.com/vllm-project/vllm), [llama.cpp](https://github.com/ggerganov/llama.cpp), etc.)
+- Tested with Qwen, DeepSeek, CodeStral, and other open-weight models
 - Inspired by AutoGPT and similar autonomous agent systems
 
 ## 📧 Support

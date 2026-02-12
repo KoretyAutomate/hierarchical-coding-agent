@@ -17,7 +17,7 @@ class TaskOrchestrator:
     Interface for Claude Code to delegate tasks to the local coding agent
     """
 
-    def __init__(self, config_path: str = "/home/korety/coding-agent/config/agent_config.yaml"):
+    def __init__(self, config_path: str = "/home/korety/Project/coding-agent/config/agent_config.yaml"):
         with open(config_path) as f:
             self.config = yaml.safe_load(f)
 

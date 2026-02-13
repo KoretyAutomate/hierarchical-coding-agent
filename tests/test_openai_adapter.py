@@ -1,32 +1,32 @@
-"""Tests for core.llm.ollama_adapter module."""
+"""Tests for core.llm.openai_adapter module."""
 import pytest
 from unittest.mock import MagicMock, patch
 import httpx
 
-from core.llm.ollama_adapter import OllamaAdapter
+from core.llm.openai_adapter import OpenAIAdapter
 from core.llm.base import LLMResponse
 
 
 @pytest.fixture
 def adapter():
     """Create an adapter pointing to a fake URL (won't connect)."""
-    return OllamaAdapter(
+    return OpenAIAdapter(
         model_name="test-model",
         base_url="http://localhost:99999/v1",
         timeout=5.0,
     )
 
 
-class TestOllamaAdapterInit:
+class TestOpenAIAdapterInit:
     def test_model_name(self, adapter):
         assert adapter.model_name == "test-model"
 
     def test_base_url_stripped(self):
-        a = OllamaAdapter(model_name="m", base_url="http://host:1234/v1/")
+        a = OpenAIAdapter(model_name="m", base_url="http://host:1234/v1/")
         assert a.base_url == "http://host:1234/v1"
 
     def test_repr(self, adapter):
-        assert "OllamaAdapter" in repr(adapter)
+        assert "OpenAIAdapter" in repr(adapter)
         assert "test-model" in repr(adapter)
 
 
@@ -56,7 +56,7 @@ class TestGenerate:
                 max_tokens=10,
             )
 
-    @patch.object(OllamaAdapter, "generate")
+    @patch.object(OpenAIAdapter, "generate")
     def test_returns_llm_response(self, mock_generate):
         """Test that generate returns proper LLMResponse shape."""
         mock_generate.return_value = LLMResponse(
@@ -64,7 +64,7 @@ class TestGenerate:
             tool_calls=None,
             finish_reason="stop",
         )
-        adapter = OllamaAdapter(model_name="test")
+        adapter = OpenAIAdapter(model_name="test")
         result = adapter.generate(
             messages=[{"role": "user", "content": "hi"}]
         )
@@ -73,9 +73,9 @@ class TestGenerate:
 
 
 class TestRetryBehavior:
-    @patch("core.llm.ollama_adapter.OllamaAdapter.generate.__wrapped__")
+    @patch("core.llm.openai_adapter.OpenAIAdapter.generate.__wrapped__")
     def test_retry_on_request_error(self, mock_wrapped):
         """Verify retry is configured (tenacity wraps the method)."""
-        adapter = OllamaAdapter(model_name="test", base_url="http://localhost:99999/v1")
+        adapter = OpenAIAdapter(model_name="test", base_url="http://localhost:99999/v1")
         # The method should have retry attributes from tenacity
         assert hasattr(adapter.generate, "retry")

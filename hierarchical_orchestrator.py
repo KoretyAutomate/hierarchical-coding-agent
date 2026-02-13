@@ -14,7 +14,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, Optional
 from output_verifier import OutputVerifier
-from core.llm import BaseLLM, OllamaAdapter, AnthropicAdapter
+from core.llm import BaseLLM, OpenAIAdapter, AnthropicAdapter
 from core.config import get_config, AppConfig
 from core.db import get_db, Task, WorkflowState, TaskStatus
 from core.context_manager import ContextManager
@@ -87,12 +87,11 @@ class HierarchicalOrchestrator:
 
     def _create_default_lead_llm(self) -> BaseLLM:
         """Create default LLM for Project Lead role."""
-        if self.config.llm.provider == "ollama":
-            # Use separate base_url for lead model (supports vLLM on different port)
-            return OllamaAdapter(
+        if self.config.llm.provider == "openai":
+            return OpenAIAdapter(
                 model_name=self.config.orchestration.lead_model,
                 base_url=self.config.orchestration.lead_base_url,
-                timeout=self.config.llm.ollama_timeout
+                timeout=self.config.llm.timeout
             )
         else:
             return AnthropicAdapter(
@@ -102,11 +101,11 @@ class HierarchicalOrchestrator:
 
     def _create_default_member_llm(self) -> BaseLLM:
         """Create default LLM for Project Member role."""
-        if self.config.llm.provider == "ollama":
-            return OllamaAdapter(
+        if self.config.llm.provider == "openai":
+            return OpenAIAdapter(
                 model_name=self.config.orchestration.member_model,
-                base_url=self.config.llm.ollama_base_url,
-                timeout=self.config.llm.ollama_timeout
+                base_url=self.config.orchestration.member_base_url,
+                timeout=self.config.llm.timeout
             )
         else:
             return AnthropicAdapter(

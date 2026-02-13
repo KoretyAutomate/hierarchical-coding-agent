@@ -219,18 +219,18 @@ class CodingAgent:
 
 if __name__ == "__main__":
     # Test the agent with new architecture
-    from core.llm import OllamaAdapter
+    from core.llm import OpenAIAdapter
     from core.config import get_config
 
     # Load configuration
     config = get_config()
 
     # Create LLM adapter
-    if config.llm.provider == "ollama":
-        llm = OllamaAdapter(
-            model_name=config.llm.ollama_model,
-            base_url=config.llm.ollama_base_url,
-            timeout=config.llm.ollama_timeout
+    if config.llm.provider == "openai":
+        llm = OpenAIAdapter(
+            model_name=config.llm.model,
+            base_url=config.llm.base_url,
+            timeout=config.llm.timeout
         )
     else:
         from core.llm import AnthropicAdapter

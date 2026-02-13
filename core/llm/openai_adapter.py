@@ -1,6 +1,6 @@
 """
-Ollama LLM adapter for local models.
-Supports Qwen3, Llama, and other Ollama-compatible models.
+OpenAI-compatible LLM adapter.
+Works with vLLM, Ollama, llama.cpp, and any OpenAI-compatible API server.
 """
 import logging
 import httpx
@@ -11,27 +11,27 @@ from .base import BaseLLM, LLMResponse
 logger = logging.getLogger(__name__)
 
 
-class OllamaAdapter(BaseLLM):
+class OpenAIAdapter(BaseLLM):
     """
-    Adapter for Ollama API (OpenAI-compatible endpoint).
-    Supports local LLM inference with models like Qwen3-Coder.
+    Adapter for OpenAI-compatible API endpoints.
+    Works with vLLM, Ollama, llama.cpp server, and similar backends.
     """
 
     def __init__(
         self,
         model_name: str,
-        base_url: str = "http://localhost:11434/v1",
+        base_url: str = "http://localhost:8000/v1",
         api_key: str = "NA",
         timeout: float = 300.0,
         **kwargs
     ):
         """
-        Initialize Ollama adapter.
+        Initialize OpenAI-compatible adapter.
 
         Args:
-            model_name: Ollama model name (e.g., 'frob/qwen3-coder-next')
-            base_url: Ollama API base URL
-            api_key: API key (not required for local Ollama, use 'NA')
+            model_name: Model name (e.g., 'Qwen/Qwen2.5-32B-Instruct-AWQ')
+            base_url: OpenAI-compatible API base URL
+            api_key: API key (use 'NA' for local servers)
             timeout: Request timeout in seconds
             **kwargs: Additional configuration
         """
@@ -113,21 +113,21 @@ class OllamaAdapter(BaseLLM):
 
         except httpx.HTTPStatusError as e:
             # Let retryable HTTP errors propagate for tenacity
-            logger.warning(f"Ollama API error: {e.response.status_code} - {e.response.text[:200]}")
+            logger.warning(f"API error: {e.response.status_code} - {e.response.text[:200]}")
             raise
         except httpx.RequestError as e:
             # Let connection errors propagate for tenacity
-            logger.warning(f"Ollama connection error: {e}")
+            logger.warning(f"Connection error: {e}")
             raise
         except Exception as e:
-            raise Exception(f"Ollama generate error: {str(e)}")
+            raise Exception(f"Generate error: {str(e)}")
 
     def validate_connection(self) -> bool:
         """
-        Validate Ollama service is accessible.
+        Validate API service is accessible.
 
         Returns:
-            True if Ollama is running and accessible
+            True if the API server is running and accessible
         """
         try:
             response = self.client.get(f"{self.base_url}/models")
@@ -136,43 +136,22 @@ class OllamaAdapter(BaseLLM):
             return False
 
     def format_messages(self, messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
-        """
-        Ollama uses OpenAI-compatible format, so no special formatting needed.
-
-        Args:
-            messages: Standard message format
-
-        Returns:
-            Same format (OpenAI-compatible)
-        """
+        """OpenAI-compatible format — no transformation needed."""
         return messages
 
     def format_tools(self, tools: Optional[List[Dict[str, Any]]]) -> Optional[List[Dict[str, Any]]]:
-        """
-        Ollama uses OpenAI-compatible tool format.
-
-        Args:
-            tools: Standard tool schemas
-
-        Returns:
-            Same format (OpenAI-compatible)
-        """
+        """OpenAI-compatible tool format — no transformation needed."""
         return tools
 
     def list_models(self) -> List[str]:
-        """
-        List available models in Ollama.
-
-        Returns:
-            List of model names
-        """
+        """List available models from the API server."""
         try:
             response = self.client.get(f"{self.base_url}/models")
             response.raise_for_status()
             models_data = response.json()
-            return [model["name"] for model in models_data.get("models", [])]
+            return [model["id"] for model in models_data.get("data", [])]
         except Exception as e:
-            raise Exception(f"Failed to list Ollama models: {str(e)}")
+            raise Exception(f"Failed to list models: {str(e)}")
 
     def __del__(self):
         """Clean up HTTP client."""

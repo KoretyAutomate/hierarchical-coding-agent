@@ -4,8 +4,7 @@ Centralized configuration management using Pydantic Settings.
 Supports configuration from:
 1. Environment variables
 2. .env files
-3. YAML config files
-4. Default values
+3. Default values
 """
 from pathlib import Path
 from typing import Optional, Literal
@@ -17,23 +16,23 @@ class LLMConfig(BaseSettings):
     """LLM provider configuration."""
 
     # Provider selection
-    provider: Literal["ollama", "anthropic"] = Field(
-        default="ollama",
+    provider: Literal["openai", "anthropic"] = Field(
+        default="openai",
         description="LLM provider to use"
     )
 
-    # Ollama configuration
-    ollama_model: str = Field(
-        default="frob/qwen3-coder-next",
-        description="Ollama model name"
+    # OpenAI-compatible API configuration (vLLM, Ollama, llama.cpp, etc.)
+    model: str = Field(
+        default="Qwen/Qwen2.5-32B-Instruct-AWQ",
+        description="Model name"
     )
-    ollama_base_url: str = Field(
-        default="http://localhost:11434/v1",
-        description="Ollama API base URL"
+    base_url: str = Field(
+        default="http://localhost:8000/v1",
+        description="OpenAI-compatible API base URL"
     )
-    ollama_timeout: float = Field(
+    timeout: float = Field(
         default=300.0,
-        description="Ollama request timeout in seconds"
+        description="Request timeout in seconds"
     )
 
     # Anthropic configuration
@@ -198,8 +197,12 @@ class OrchestrationConfig(BaseSettings):
         description="Base URL for Lead model (vLLM server)"
     )
     member_model: str = Field(
-        default="frob/qwen3-coder-next",
+        default="Qwen/Qwen2.5-32B-Instruct-AWQ",
         description="Project Member model (implementation)"
+    )
+    member_base_url: str = Field(
+        default="http://localhost:8000/v1",
+        description="Base URL for Member model (vLLM server)"
     )
 
     model_config = SettingsConfigDict(

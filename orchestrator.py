@@ -11,7 +11,6 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import yaml
 import sys
 
 from agents.coding_agent import CodingAgent
@@ -25,11 +24,33 @@ class TaskOrchestrator:
     """
 
     def __init__(self, config_path: str = None):
-        if config_path is None:
-            config_path = str(Path(__file__).parent / "config" / "agent_config.yaml")
+        from core.config import get_config
+        app_config = get_config()
 
-        with open(config_path) as f:
-            self.config = yaml.safe_load(f)
+        self.config = {
+            'llm': {
+                'provider': app_config.llm.provider,
+                'model': app_config.llm.model,
+                'base_url': app_config.llm.base_url,
+                'timeout': app_config.llm.timeout,
+                'temperature': app_config.llm.temperature,
+                'max_tokens': app_config.llm.max_tokens,
+            },
+            'workspace': {
+                'project_root': str(app_config.workspace.project_root),
+            },
+            'orchestration': {
+                'task_queue_path': str(Path(__file__).parent / "tasks" / "queue.json"),
+                'completed_tasks_path': str(Path(__file__).parent / "tasks" / "completed.json"),
+                'logs_path': str(app_config.workspace.logs_path),
+                'max_iterations': app_config.orchestration.max_iterations,
+            },
+            'reflection': {
+                'enabled': True,
+                'storage_path': 'reflections',
+                'max_reflection_tokens': 2048,
+            },
+        }
 
         self.task_queue_path = Path(self.config['orchestration']['task_queue_path'])
         self.completed_path = Path(self.config['orchestration']['completed_tasks_path'])
@@ -52,13 +73,13 @@ class TaskOrchestrator:
     def _create_llm(self) -> BaseLLM:
         """Create an LLM instance from config."""
         llm_config = self.config.get('llm', {})
-        provider = llm_config.get('provider', 'ollama')
+        provider = llm_config.get('provider', 'openai')
 
-        if provider == 'ollama':
-            from core.llm import OllamaAdapter
-            return OllamaAdapter(
-                model_name=llm_config.get('model', 'frob/qwen3-coder-next'),
-                base_url=llm_config.get('base_url', 'http://localhost:11434/v1'),
+        if provider == 'openai':
+            from core.llm import OpenAIAdapter
+            return OpenAIAdapter(
+                model_name=llm_config.get('model', 'Qwen/Qwen2.5-32B-Instruct-AWQ'),
+                base_url=llm_config.get('base_url', 'http://localhost:8000/v1'),
                 timeout=llm_config.get('timeout', 300.0),
             )
         elif provider == 'anthropic':

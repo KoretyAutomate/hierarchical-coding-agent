@@ -1555,11 +1555,11 @@ You work with:
 
 Be thorough but concise. Focus on actionable guidance."""
 
-        # Run in executor since call_qwen3_lead is synchronous
+        # Run in executor since call_lead is synchronous
         loop = asyncio.get_event_loop()
         revised_plan = await loop.run_in_executor(
             None,
-            lambda: orchestrator.call_qwen3_lead(revision_prompt, system_prompt)
+            lambda: orchestrator.call_lead(revision_prompt, system_prompt)
         )
 
         # Update task with revised plan

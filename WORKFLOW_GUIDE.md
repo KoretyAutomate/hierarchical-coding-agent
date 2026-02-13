@@ -78,7 +78,7 @@
 │  [  ✓ Approve  ] [📤 Submit Changes]
 └─────────────────────────────────────┘
 
-    ↓ (Qwen3 Lead revises plan)
+    ↓ (Project Lead revises plan)
 
 ┌─────────────────────────────────────┐
 │  📋 Review Plan (Revised)    [×]    │
@@ -108,7 +108,7 @@
 │  ─────────────────────────────────  │
 │  ┌─────────────────────────────┐   │
 │  │ Status: Implementing        │   │
-│  │ Qwen3-Coder writing code... │   │
+│  │ Project Member writing code...│   │
 │  └─────────────────────────────┘   │
 │                                     │
 │  [12:36:01] Plan approved          │
@@ -221,7 +221,7 @@ Step 5: Implementation Approval
 Status: implementing
 Retry count: +1
   ↓
-Qwen3-Coder runs again with same plan
+Project Member runs again with same plan
   ↓
 Back to Step 5 with new implementation
 ```
@@ -252,7 +252,7 @@ Error details saved to database
 │  Just submitted, not started        │
 │                                     │
 │  🔵 #3              [PLANNING]      │
-│  Qwen3 Lead creating plan           │
+│  Project Lead creating plan         │
 │                                     │
 │  🟠 #2  [PLAN AWAITING APPROVAL] ← Click me!
 │  ↑ Pulsing animation                │
@@ -462,7 +462,7 @@ Plan rejection reason: "Plan incomplete"
 ```
 Step: Implementing
 ↓
-Qwen3-Coder error
+Project Member error
 ↓
 WebSocket: { event: "task_error", data: { error: "Syntax error" } }
 ↓

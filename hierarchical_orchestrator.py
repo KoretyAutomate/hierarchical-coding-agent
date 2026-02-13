@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Hierarchical Agent Orchestrator
-3-Tier System: Claude (PM) → Qwen3 (Lead) → Qwen3-Coder (Member)
+3-Tier System: Claude (PM) → Lead LLM → Member LLM
 
 Now uses:
 - LLM abstraction layer
@@ -161,7 +161,7 @@ class HierarchicalOrchestrator:
             **updates
         )
 
-    def call_qwen3_lead(self, prompt: str, system_prompt: str = None) -> str:
+    def call_lead(self, prompt: str, system_prompt: str = None) -> str:
         """
         Call Project Lead LLM for decision-making and planning.
         Now uses LLM abstraction layer with retry/backoff.
@@ -181,7 +181,7 @@ class HierarchicalOrchestrator:
         )
         return response.content
 
-    def call_qwen3_coder(self, prompt: str, system_prompt: str = None) -> Dict[str, Any]:
+    def call_member(self, prompt: str, system_prompt: str = None) -> Dict[str, Any]:
         """
         Call Project Member LLM for implementation.
         Uses the CodingAgent with LLM abstraction and optional sandbox.
@@ -234,9 +234,9 @@ class HierarchicalOrchestrator:
 
         Workflow:
         1. User provides request
-        2. Qwen3 (Lead) creates implementation plan
+        2. Lead LLM creates implementation plan
         3. User approves plan [CHECKPOINT - interactive or return]
-        4. Qwen3-Coder implements
+        4. Member LLM implements
         5. Qwen3 reviews implementation
         6. Output verification
         7. User approves results [CHECKPOINT - interactive or return]
@@ -277,7 +277,7 @@ class HierarchicalOrchestrator:
         })
 
         # STAGE 1: Qwen3 creates plan
-        print("STAGE 1: Qwen3 (Project Lead) Creating Implementation Plan...")
+        print("STAGE 1: Project Lead Creating Implementation Plan...")
         print("-" * 70)
 
         # Generate project context using ContextManager (Cline-like feature)
@@ -297,7 +297,7 @@ Create a detailed implementation plan that includes:
 4. **Testing Strategy**: How to verify it works
 5. **Success Criteria**: How to know when it's complete
 
-Be specific and actionable. This plan will be given to a junior developer (Qwen3-Coder) to implement.
+Be specific and actionable. This plan will be given to a junior developer (Member LLM) to implement.
 
 Provide your plan in a clear, structured format."""
 
@@ -310,17 +310,17 @@ Provide your plan in a clear, structured format."""
 
 You work with:
 - Project Manager (Claude Code): Coordinates workflow, runs tests
-- Junior Developer (Qwen3-Coder): Implements your plans
+- Junior Developer (Member LLM): Implements your plans
 
 Be thorough but concise. Focus on actionable guidance.
 
 {project_context}"""
 
-        plan = self.call_qwen3_lead(planning_prompt, system_prompt)
+        plan = self.call_lead(planning_prompt, system_prompt)
 
         workflow_log["stages"].append({
             "stage": "planning",
-            "agent": "qwen3_lead",
+            "agent": "lead",
             "output": plan
         })
 
@@ -401,11 +401,11 @@ Requested Changes:
 Please provide a revised implementation plan addressing these changes."""
 
                 print("\nRevising plan based on your feedback...")
-                plan = self.call_qwen3_lead(revision_prompt, system_prompt)
+                plan = self.call_lead(revision_prompt, system_prompt)
 
                 workflow_log["stages"].append({
                     "stage": "plan_revision",
-                    "agent": "qwen3_lead",
+                    "agent": "lead",
                     "user_feedback": changes,
                     "output": plan
                 })
@@ -439,8 +439,8 @@ Please provide a revised implementation plan addressing these changes."""
             "plan": plan
         })
 
-        # STAGE 2: Qwen3-Coder implements
-        print("STAGE 2: Qwen3-Coder (Project Member) Implementing...")
+        # STAGE 2: Member LLM implements
+        print("STAGE 2: Project Member Implementing...")
         print("-" * 70)
 
         implementation_request = f"""Implement the following plan:
@@ -449,11 +449,11 @@ Please provide a revised implementation plan addressing these changes."""
 
 Follow the plan exactly. Report what you did when complete."""
 
-        implementation_result = self.call_qwen3_coder(implementation_request)
+        implementation_result = self.call_member(implementation_request)
 
         workflow_log["stages"].append({
             "stage": "implementation",
-            "agent": "qwen3_coder",
+            "agent": "member",
             "output": implementation_result
         })
 
@@ -495,7 +495,7 @@ Follow the plan exactly. Report what you did when complete."""
         print("-" * 70)
 
         # STAGE 3: Qwen3 reviews
-        print("STAGE 3: Qwen3 (Project Lead) Reviewing Implementation...")
+        print("STAGE 3: Project Lead Reviewing Implementation...")
         print("-" * 70)
 
         review_prompt = f"""Review this implementation by the junior developer:
@@ -518,11 +518,11 @@ As Project Lead, review:
 
 Provide your review and decision: APPROVE or REQUEST_CHANGES."""
 
-        review = self.call_qwen3_lead(review_prompt)
+        review = self.call_lead(review_prompt)
 
         workflow_log["stages"].append({
             "stage": "review",
-            "agent": "qwen3_lead",
+            "agent": "lead",
             "output": review
         })
 

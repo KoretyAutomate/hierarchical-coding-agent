@@ -1,17 +1,29 @@
 #!/bin/bash
-# vLLM Docker Server Startup Script for Coding Agent
-# Model: DeepSeek-R1-Distill-Qwen-32B (Project Lead)
-# Port: 8000
+# Start Project Lead via vLLM in Docker
+# Reads configuration from .env file
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Source .env if it exists
+if [ -f "$SCRIPT_DIR/.env" ]; then
+    set -a
+    source "$SCRIPT_DIR/.env"
+    set +a
+    echo "✓ Loaded .env"
+fi
+
+MODEL="${ORCH_LEAD_MODEL:-Qwen/Qwen2.5-32B-Instruct-AWQ}"
+PORT="${ORCH_LEAD_PORT:-8000}"
+MAX_CTX="${ORCH_LEAD_MAX_CTX:-32768}"
+GPU_MEM="${ORCH_LEAD_GPU_MEM:-0.9}"
 
 echo "======================================="
-echo "Starting Project Lead (DeepSeek-R1 Docker)"
+echo "Starting Project Lead (vLLM Docker)"
 echo "======================================="
-echo "Model: DeepSeek-R1-Distill-Qwen-32B"
-echo "Type: Reasoning model (32B params)"
-echo "Purpose: Deep research, planning, hierarchical orchestration"
-echo "Port: 8000"
-echo "Context: 32k tokens"
-echo "Memory: 90% GPU utilization"
+echo "Model:   $MODEL"
+echo "Port:    $PORT"
+echo "Context: $MAX_CTX tokens"
+echo "GPU Mem: $GPU_MEM"
 echo ""
 
 # Kill any existing container
@@ -21,23 +33,23 @@ docker ps -a --filter "name=vllm-server" -q | xargs docker rm -f 2>/dev/null || 
 docker run --runtime nvidia --gpus all \
   --name vllm-server \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
-  -p 8000:8000 \
+  -p "${PORT}:${PORT}" \
   --ipc=host \
   vllm/vllm-openai:latest \
-  --model deepseek-ai/DeepSeek-R1-Distill-Qwen-32B \
+  --model "$MODEL" \
   --host 0.0.0.0 \
-  --port 8000 \
-  --max-model-len 32768 \
-  --gpu-memory-utilization 0.9 \
+  --port "$PORT" \
+  --max-model-len "$MAX_CTX" \
+  --gpu-memory-utilization "$GPU_MEM" \
   --dtype auto \
   --trust-remote-code
 
 echo ""
 echo "======================================="
-echo "✓ DeepSeek-R1 Project Lead started"
+echo "✓ Project Lead started"
 echo "======================================="
-echo "API: http://localhost:8000/v1"
-echo "Health: http://localhost:8000/health"
-echo "Models: http://localhost:8000/v1/models"
+echo "API: http://localhost:${PORT}/v1"
+echo "Health: http://localhost:${PORT}/health"
+echo "Models: http://localhost:${PORT}/v1/models"
 echo "Docker logs: docker logs vllm-server"
 echo ""

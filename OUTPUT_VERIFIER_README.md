@@ -18,9 +18,9 @@ The Output Verifier automatically validates that code changes produce expected o
 
 The Output Verifier is integrated into the Hierarchical Orchestrator as **Stage 4**:
 
-1. **Planning** (Qwen3 Lead)
-2. **Implementation** (Qwen3 Coder)
-3. **Review** (Qwen3 Lead)
+1. **Planning** (Project Lead)
+2. **Implementation** (Project Member)
+3. **Review** (Project Lead)
 4. **Output Verification** (NEW - Output Verifier)
 5. **User Approval**
 6. **PR Creation**

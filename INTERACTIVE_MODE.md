@@ -80,7 +80,7 @@ python3 hierarchical_orchestrator.py "Add error handling to API"
 2. **Asks user directly**: "Do you approve this plan? (yes/no/edit)"
    - `yes`: Continues to implementation
    - `no`: Aborts workflow
-   - `edit`: Ask for changes, revise plan with Qwen3-Lead
+   - `edit`: Ask for changes, revise plan with Project Lead
 3. Implements code, runs tests
 4. **Asks user directly**: "Do you approve the implementation? (yes/no/retry)"
    - `yes`: Completes workflow, saves log
@@ -108,10 +108,10 @@ AUTONOMOUS WORKFLOW STARTED
 ======================================================================
 User Request: Add error handling to API
 
-STAGE 1: Qwen3 (Project Lead) Creating Implementation Plan...
+STAGE 1: Project Lead Creating Implementation Plan...
 ----------------------------------------------------------------------
 
-[Plan created by Qwen3-Lead...]
+[Plan created by Project Lead...]
 
 ----------------------------------------------------------------------
 
@@ -134,11 +134,11 @@ Do you approve this plan? (yes/no/edit): yes
 CONTINUING WORKFLOW - Plan Approved
 ======================================================================
 
-STAGE 2: Qwen3-Coder (Project Member) Implementing...
+STAGE 2: Project Member Implementing...
 ----------------------------------------------------------------------
 [Implementation output...]
 
-STAGE 3: Qwen3 (Project Lead) Reviewing Implementation...
+STAGE 3: Project Lead Reviewing Implementation...
 ----------------------------------------------------------------------
 [Review output...]
 

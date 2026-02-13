@@ -68,7 +68,7 @@ return OllamaAdapter(
 )
 ```
 
-### 3. `/home/korety/coding-agent/start_qwen3_lead.sh`
+### 3. `/home/korety/coding-agent/start_lead_vllm.sh`
 
 **Changes**:
 - Completely replaced with vLLM startup script for DeepSeek-R1
@@ -105,7 +105,7 @@ return OllamaAdapter(
 
 ```bash
 cd /home/korety/coding-agent
-./start_qwen3_lead.sh
+./start_lead_vllm.sh
 ```
 
 This starts DeepSeek-R1 on port 8000.
@@ -170,7 +170,7 @@ pkill -f "vllm.entrypoints.openai.api_server"
 **Issue**: `Connection refused to localhost:8000`
 **Solution**: Ensure vLLM server is running
 ```bash
-./start_qwen3_lead.sh
+./start_lead_vllm.sh
 ```
 
 ### Member LLM Connection Error
@@ -183,7 +183,7 @@ ollama serve
 
 ### Wrong Model Being Used
 
-**Issue**: Still using old Qwen3 for planning
+**Issue**: Still using old model for planning
 **Solution**:
 1. Verify config changes: `cat core/config.py | grep -A5 "lead_model"`
 2. Check orchestrator is using new config
@@ -210,7 +210,7 @@ ollama serve
 - **Strengths**: Multi-step reasoning, planning, code review
 - **Use Case**: Planning implementation strategies, reviewing code quality
 
-### Qwen3-Coder-Next (Project Member)
+### qwen3-coder-next (Project Member)
 - **Type**: Code generation model
 - **Size**: Quantized (GGUF format)
 - **Context**: Varies by quantization
@@ -225,7 +225,7 @@ ollama serve
 2. ✅ Configuration updated
 3. ✅ Orchestrator updated
 4. ✅ Startup script created
-5. ⏭️ Start vLLM server: `./start_qwen3_lead.sh`
+5. ⏭️ Start vLLM server: `./start_lead_vllm.sh`
 6. ⏭️ Start Ollama: `ollama serve`
 7. ⏭️ Test hierarchical orchestrator
 8. ⏭️ Monitor performance and context handling

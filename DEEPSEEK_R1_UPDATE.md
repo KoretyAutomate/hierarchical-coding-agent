@@ -92,7 +92,7 @@ python3 hierarchical_orchestrator.py "Your coding task here"
 ## Startup Scripts
 
 ### Old Scripts (vLLM - No Longer Used)
-- `start_qwen3_lead.sh` - vLLM startup (deprecated)
+- `start_lead_vllm.sh` - vLLM startup (deprecated)
 - `start_vllm_docker.sh` - Docker vLLM (deprecated)
 
 ### Current Setup
@@ -221,7 +221,7 @@ python3 hierarchical_orchestrator.py "Add error handling to the search function"
 python3 hierarchical_orchestrator.py "Refactor the authentication system to use JWT tokens"
 ```
 - Tests DeepSeek-R1's planning capabilities
-- Tests Qwen3-coder's implementation skills
+- Tests Project Member's implementation skills
 
 ### Test 3: Large Context
 ```bash

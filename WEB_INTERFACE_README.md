@@ -9,7 +9,7 @@ The web interface has been successfully upgraded with comprehensive mobile appro
 ### 1. Plan Approval Workflow ✅
 - **Approve**: Continue to implementation
 - **Reject**: Abort workflow with reason
-- **Request Changes**: Get revised plan from Qwen3 Lead based on feedback
+- **Request Changes**: Get revised plan from Project Lead based on feedback
 
 ### 2. Implementation Approval Workflow ✅
 - **Approve & Complete**: Mark task as completed
@@ -127,13 +127,13 @@ When implementation completes:
 ```
 pending
   ↓
-planning (Qwen3 Lead creating plan)
+planning (Project Lead creating plan)
   ↓
 plan_awaiting_approval (🔶 pulsing orange - click to review)
   ↓ (if approved)
-implementing (Qwen3-Coder working)
+implementing (Project Member working)
   ↓
-reviewing (Qwen3 Lead reviewing code)
+reviewing (Project Lead reviewing code)
   ↓
 verifying (OutputVerifier testing)
   ↓
@@ -435,7 +435,7 @@ sudo journalctl -u coding-agent-web -f
 - **Framework**: FastAPI + Uvicorn
 - **Database**: SQLite3
 - **Frontend**: Vanilla JavaScript + WebSockets
-- **Architecture**: 3-tier hierarchy (Claude → Qwen3 → Qwen3-Coder)
+- **Architecture**: 3-tier hierarchy (Claude → Lead LLM → Member LLM)
 
 ---
 

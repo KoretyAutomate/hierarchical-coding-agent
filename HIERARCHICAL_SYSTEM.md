@@ -18,7 +18,7 @@
 │  Role: Workflow coordinator & quality assurance         │
 │  Actions:                                                │
 │    - Break down user requests into tasks                 │
-│    - Coordinate between Qwen3 and Qwen3-Coder           │
+│    - Coordinate between Project Lead and Project Member │
 │    - Run tests and verification                          │
 │    - Create GitHub PRs                                   │
 │    - Ensure quality standards                            │
@@ -26,7 +26,7 @@
 └─────────────────────────────────────────────────────────┘
                             ↓
 ┌─────────────────────────────────────────────────────────┐
-│  QWEN3-THINKING (Project Lead / Technical Brain)        │
+│  PROJECT LEAD (Technical Brain)                         │
 │  Model: Qwen3-Next-80B-A3B-Thinking-AWQ-4bit            │
 │  Port: 8000                                              │
 │  Role: Technical leadership & decision making            │
@@ -34,23 +34,23 @@
 │    - Analyze requirements deeply                         │
 │    - Create detailed implementation plans                │
 │    - Make architectural decisions                        │
-│    - Review code from Qwen3-Coder                       │
+│    - Review code from Project Member                    │
 │    - Approve/reject implementations                      │
 │    - Provide technical guidance                          │
 │    - Conduct deep research for podcast workflow          │
 └─────────────────────────────────────────────────────────┘
                             ↓
 ┌─────────────────────────────────────────────────────────┐
-│  QWEN3-CODER (Project Member / Developer)              │
+│  PROJECT MEMBER (Developer)                             │
 │  Model: qwen3-coder (via Ollama)                        │
 │  Port: 11434                                             │
 │  Role: Implementation & coding                           │
 │  Actions:                                                │
-│    - Implement code based on Qwen3's plans              │
+│    - Implement code based on Project Lead's plans       │
 │    - Write unit tests                                    │
 │    - Fix bugs                                            │
 │    - Refactor code                                       │
-│    - Report progress to Qwen3 for review                │
+│    - Report progress to Project Lead for review         │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -67,8 +67,8 @@
    Claude: Analyzes request, creates context
    ↓
 
-3. QWEN3 (LEAD) - PLANNING
-   Qwen3: Creates detailed implementation plan
+3. PROJECT LEAD - PLANNING
+   Project Lead: Creates detailed implementation plan
    Output:
    - Requirements analysis
    - Technical approach
@@ -81,16 +81,16 @@
    You: Review and approve plan
    ↓
 
-5. QWEN3-CODER (MEMBER) - IMPLEMENTATION
-   Qwen3-Coder: Implements the plan
+5. PROJECT MEMBER - IMPLEMENTATION
+   Project Member: Implements the plan
    Output:
    - Code changes
    - Test files
    - Documentation
    ↓
 
-6. QWEN3 (LEAD) - CODE REVIEW
-   Qwen3: Reviews implementation
+6. PROJECT LEAD - CODE REVIEW
+   Project Lead: Reviews implementation
    Output:
    - Code quality assessment
    - Issues/improvements needed
@@ -119,8 +119,8 @@
 
 ## System Components
 
-### 1. Qwen3 Project Lead Server
-**File**: `/home/korety/coding-agent/qwen3_lead_server.py`
+### 1. Project Lead Server
+**File**: `/home/korety/coding-agent/lead_server.py`
 - FastAPI server with OpenAI-compatible API
 - Port: 8000
 - Memory: Capped at 50% GPU
@@ -129,7 +129,7 @@
 **Start:**
 ```bash
 cd ~/coding-agent
-./start_qwen3_transformers.sh
+./start_lead_transformers.sh
 ```
 
 **Test:**
@@ -138,7 +138,7 @@ curl http://localhost:8000/health
 curl http://localhost:8000/v1/models
 ```
 
-### 2. Qwen3-Coder Member
+### 2. Project Member
 **Service**: Ollama
 - Port: 11434
 - Model: qwen3-coder:latest
@@ -169,9 +169,9 @@ python3 hierarchical_orchestrator.py "Your request here"
 You: "Add error handling to the podcast search tool"
 ```
 
-### Stage 1: Planning (Qwen3)
+### Stage 1: Planning (Project Lead)
 ```
-Qwen3 (Project Lead) creates plan:
+Project Lead creates plan:
 
 IMPLEMENTATION PLAN
 ===================
@@ -203,17 +203,17 @@ IMPLEMENTATION PLAN
 
 **→ YOU APPROVE** ✅
 
-### Stage 2: Implementation (Qwen3-Coder)
+### Stage 2: Implementation (Project Member)
 ```
-Qwen3-Coder implements:
+Project Member implements:
 - Modified search_tool function
 - Added error handling
 - Created test cases
 ```
 
-### Stage 3: Review (Qwen3)
+### Stage 3: Review (Project Lead)
 ```
-Qwen3 reviews code:
+Project Lead reviews code:
 
 CODE REVIEW
 ===========
@@ -252,13 +252,13 @@ Claude creates PR:
 ## Configuration
 
 ### Memory Allocation
-- **Qwen3 (Lead)**: 50% GPU memory
-- **Qwen3-Coder**: Managed by Ollama (efficient GGUF)
+- **Project Lead**: 50% GPU memory
+- **Project Member**: Managed by Ollama (efficient GGUF)
 - **Total**: Safe for DGX Spark stability
 
 ### Ports
-- **8000**: Qwen3 Project Lead
-- **11434**: Qwen3-Coder (Ollama)
+- **8000**: Project Lead
+- **11434**: Project Member (Ollama)
 
 ### API Compatibility
 Both servers use OpenAI-compatible API:
@@ -270,12 +270,12 @@ Both servers use OpenAI-compatible API:
 
 ### For You (User)
 - ✅ Only approve at key checkpoints
-- ✅ High-quality implementations (reviewed by Qwen3)
+- ✅ High-quality implementations (reviewed by Project Lead)
 - ✅ Fully tested before PR
 - ✅ Minimal involvement needed
 
 ### For Development Quality
-- ✅ **Qwen3 Thinking mode** for complex reasoning
+- ✅ **Project Lead Thinking mode** for complex reasoning
 - ✅ **Deep research capability** for podcast workflow
 - ✅ **Code review by AI** before human review
 - ✅ **Automated testing** by Claude
@@ -288,32 +288,32 @@ Both servers use OpenAI-compatible API:
 
 ## Integration with Podcast Workflow
 
-Qwen3 (Project Lead) can also:
+Project Lead can also:
 1. **Plan podcast research** - Deep analysis of topics
 2. **Review research quality** - Validate sources
 3. **Make editorial decisions** - Content direction
 4. **Optimize workflow** - Process improvements
 
 This creates a **unified brain** for both:
-- Coding tasks (with Qwen3-Coder)
+- Coding tasks (with Project Member)
 - Podcast research tasks (with crew.ai agents)
 
 ## Troubleshooting
 
-### Qwen3 Server Won't Start
+### Lead Server Won't Start
 ```bash
 # Check logs
-tail -f ~/coding-agent/logs/qwen3_transformers.log
+tail -f ~/coding-agent/logs/lead_transformers.log
 
 # Check if port is in use
 lsof -i :8000
 
 # Restart
-pkill -f qwen3_lead_server
-./start_qwen3_transformers.sh
+pkill -f lead_server
+./start_lead_transformers.sh
 ```
 
-### Qwen3-Coder Not Responding
+### Member Not Responding
 ```bash
 # Check Ollama
 ollama list
@@ -335,24 +335,24 @@ nvidia-smi
 
 ```
 ~/coding-agent/
-├── qwen3_lead_server.py           # Qwen3 Project Lead server
-├── start_qwen3_transformers.sh    # Startup script
+├── lead_server.py                 # Project Lead server
+├── start_lead_transformers.sh     # Startup script
 ├── hierarchical_orchestrator.py   # Main orchestrator
-├── orchestrator.py                # Task queue (for Qwen3-Coder)
+├── orchestrator.py                # Task queue (for Project Member)
 ├── agents/
-│   └── coding_agent.py            # Qwen3-Coder agent
+│   └── coding_agent.py            # Project Member agent
 ├── tools/
 │   └── coding_tools.py            # Dev tools
 ├── config/
 │   └── agent_config.yaml          # Configuration
 └── logs/
-    ├── qwen3_transformers.log     # Qwen3 logs
+    ├── lead_transformers.log      # Project Lead logs
     └── workflow_*.json            # Workflow logs
 ```
 
 ## Next Steps
 
-1. **Wait for Qwen3 to load** (~2-3 minutes)
+1. **Wait for Project Lead to load** (~2-3 minutes)
 2. **Test the system** with a simple request
 3. **Integrate with podcast workflow**
 4. **Start building autonomously!**
@@ -361,4 +361,4 @@ nvidia-smi
 
 **Ready to use the 3-tier system!** 🚀
 
-Qwen3 provides the intelligence, Qwen3-Coder does the work, Claude ensures quality, and you make the final decisions.
+Project Lead provides the intelligence, Project Member does the work, Claude ensures quality, and you make the final decisions.

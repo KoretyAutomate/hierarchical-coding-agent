@@ -1,6 +1,7 @@
 """
-Qwen3-32B-AWQ Server (Project Lead)
-Serves via FastAPI + Transformers for deep research and planning
+Project Lead Server
+Serves via FastAPI + Transformers for deep research and planning.
+Configure MODEL_NAME below or via LEAD_SERVER_MODEL env var.
 """
 import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -33,16 +34,14 @@ async def load_model():
     """Load Qwen3-Thinking model on startup"""
     global model, tokenizer
 
-    print("="*60)
-    print("Loading Qwen3-32B-AWQ (Project Lead)")
-    print("="*60)
-    print("Model: Qwen/Qwen3-32B-AWQ")
-    print("Type: 32B parameters, AWQ 4-bit quantized")
-    print("Purpose: Deep research, planning, decision-making")
-    print("Size: 19GB")
-    print("")
+    model_name = os.environ.get("LEAD_SERVER_MODEL", "Qwen/Qwen2.5-32B-Instruct-AWQ")
 
-    model_name = "Qwen/Qwen3-32B-AWQ"
+    print("="*60)
+    print("Loading Project Lead Model")
+    print("="*60)
+    print(f"Model: {model_name}")
+    print("Purpose: Deep research, planning, decision-making")
+    print("")
 
     tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
 
@@ -55,7 +54,7 @@ async def load_model():
         # AWQ 4-bit quantization keeps memory usage low automatically
     )
 
-    print(f"✓ Qwen3 Project Lead loaded successfully")
+    print(f"✓ Project Lead loaded successfully")
     print(f"✓ Device: {model.device}")
     print(f"✓ AWQ 4-bit quantization active (low memory usage)")
     print("")
@@ -66,10 +65,10 @@ async def list_models():
         "object": "list",
         "data": [
             {
-                "id": "Qwen3-Lead",
+                "id": "project-lead",
                 "object": "model",
                 "created": 1234567890,
-                "owned_by": "qwen"
+                "owned_by": "local"
             }
         ]
     }
@@ -144,12 +143,12 @@ async def health_check():
     return {
         "status": "healthy",
         "model_loaded": model is not None,
-        "model_name": "Qwen3-32B-AWQ"
+        "model_name": os.environ.get("LEAD_SERVER_MODEL", "Qwen/Qwen2.5-32B-Instruct-AWQ")
     }
 
 if __name__ == "__main__":
     print("="*60)
-    print("Qwen3 Project Lead Server")
+    print("Project Lead Server")
     print("="*60)
     print("Starting on http://localhost:8000")
     print("OpenAI-compatible API at /v1/chat/completions")

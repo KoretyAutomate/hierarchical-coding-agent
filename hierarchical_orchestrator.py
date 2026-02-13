@@ -9,6 +9,7 @@ Now uses:
 - Database persistence with resume capability
 """
 import json
+import re
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, Optional
@@ -61,6 +62,7 @@ class HierarchicalOrchestrator:
         self.workspace = self.config.workspace.project_root
         self.logs_dir = self.config.workspace.logs_path
         self.logs_dir.mkdir(parents=True, exist_ok=True)
+        self.current_log_dir = None  # Set per-request in autonomous_workflow()
 
         # Initialize Context Manager (Cline-like feature)
         self.context_manager = ContextManager(str(self.workspace))
@@ -248,6 +250,12 @@ class HierarchicalOrchestrator:
             workflow_state=WorkflowState.PLANNING.value
         )
         self.current_task_id = task_id
+
+        # Create per-request log subdirectory
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        slug = re.sub(r'[^a-z0-9]+', '-', user_request[:50].lower()).strip('-')
+        self.current_log_dir = self.logs_dir / f"{timestamp}_{slug}"
+        self.current_log_dir.mkdir(parents=True, exist_ok=True)
 
         workflow_log = {
             "task_id": task_id,
@@ -464,6 +472,28 @@ Follow the plan exactly. Report what you did when complete."""
         print(f"\nImplementation Result: {json.dumps(implementation_result, indent=2, default=str)}\n")
         print("-" * 70)
 
+        # STAGE 2.5: Auto-lint with ruff
+        print("STAGE 2.5: Auto-Linting with ruff...")
+        print("-" * 70)
+
+        lint_result = self._run_auto_lint()
+        workflow_log["stages"].append({
+            "stage": "auto_lint",
+            "agent": "ruff",
+            "output": lint_result
+        })
+
+        if lint_result.get("success"):
+            print(f"\n✓ Linting passed: {lint_result['summary']}")
+        else:
+            print(f"\n⚠ Linting issues: {lint_result['summary']}")
+            if lint_result.get("auto_fixed"):
+                print(f"  Auto-fixed {lint_result['auto_fixed']} issue(s)")
+            if lint_result.get("remaining_issues"):
+                print(f"  Remaining issues:\n{lint_result['remaining_issues']}")
+
+        print("-" * 70)
+
         # STAGE 3: Qwen3 reviews
         print("STAGE 3: Qwen3 (Project Lead) Reviewing Implementation...")
         print("-" * 70)
@@ -476,11 +506,15 @@ Original Plan:
 Implementation Result:
 {json.dumps(implementation_result, indent=2)}
 
+Linting Result:
+{json.dumps(lint_result, indent=2)}
+
 As Project Lead, review:
 1. Does it follow the plan?
 2. Is the code quality acceptable?
-3. Are there any issues or improvements needed?
-4. Should we proceed to testing?
+3. Are there any linting issues that still need attention?
+4. Are there any other issues or improvements needed?
+5. Should we proceed to testing?
 
 Provide your review and decision: APPROVE or REQUEST_CHANGES."""
 
@@ -796,6 +830,64 @@ Provide your review and decision: APPROVE or REQUEST_CHANGES."""
             print("  Starting from scratch")
             return self.autonomous_workflow(task.request, interactive=False)
 
+    def _run_auto_lint(self) -> Dict[str, Any]:
+        """
+        Run ruff linter with auto-fix on the workspace.
+        First pass: fix what can be auto-fixed.
+        Second pass: report remaining issues.
+
+        Returns:
+            Dict with success, summary, auto_fixed count, and remaining_issues.
+        """
+        import subprocess
+
+        workspace = str(self.workspace)
+        result = {"success": False, "summary": "", "auto_fixed": 0, "remaining_issues": ""}
+
+        try:
+            # Pass 1: auto-fix
+            fix_run = subprocess.run(
+                ["ruff", "check", "--fix", workspace],
+                capture_output=True, text=True, timeout=60
+            )
+
+            # Count fixes from output (ruff prints "Found N errors (M fixed, ...)")
+            fix_output = (fix_run.stdout + fix_run.stderr).strip()
+            import re
+            fixed_match = re.search(r"(\d+) fixed", fix_output)
+            if fixed_match:
+                result["auto_fixed"] = int(fixed_match.group(1))
+
+            # Pass 2: check for remaining issues
+            check_run = subprocess.run(
+                ["ruff", "check", workspace],
+                capture_output=True, text=True, timeout=60
+            )
+
+            check_output = (check_run.stdout + check_run.stderr).strip()
+
+            if check_run.returncode == 0:
+                result["success"] = True
+                result["summary"] = "All checks passed"
+                if result["auto_fixed"]:
+                    result["summary"] += f" ({result['auto_fixed']} auto-fixed)"
+            else:
+                result["success"] = False
+                result["remaining_issues"] = check_output
+                # Count remaining
+                issue_lines = [l for l in check_output.split("\n") if l and not l.startswith("Found")]
+                result["summary"] = f"{len(issue_lines)} issue(s) remaining after auto-fix"
+
+        except FileNotFoundError:
+            result["summary"] = "ruff not installed — skipping lint step"
+            result["success"] = True  # Don't block workflow if ruff isn't available
+        except subprocess.TimeoutExpired:
+            result["summary"] = "Linting timed out after 60s"
+        except Exception as e:
+            result["summary"] = f"Linting error: {e}"
+
+        return result
+
     def _offer_vscode_diff_review(self, implementation_result: Dict):
         """
         Offer to view diffs in VS Code (Phase 3 feature).
@@ -870,7 +962,10 @@ Provide your review and decision: APPROVE or REQUEST_CHANGES."""
 
     def save_workflow_log(self, workflow_log: Dict):
         """Save workflow log for audit trail."""
-        log_file = self.logs_dir / f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        if self.current_log_dir:
+            log_file = self.current_log_dir / "workflow.json"
+        else:
+            log_file = self.logs_dir / f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         with open(log_file, 'w') as f:
             json.dump(workflow_log, f, indent=2)
         print(f"\n✓ Workflow log saved: {log_file}")

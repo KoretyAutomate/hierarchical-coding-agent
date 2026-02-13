@@ -19,6 +19,7 @@ class CodingTools:
 
     DEFAULT_ALLOWED_COMMANDS = [
         "python3", "pytest", "pip", "git", "ls", "grep", "find", "npm", "node",
+        "ruff",
     ]
 
     def __init__(
@@ -400,6 +401,51 @@ class CodingTools:
         """Set or replace the backup callback invoked before file modifications."""
         self._backup_callback = callback
 
+    # ---- Linting tools ----
+
+    def run_linter(self, file_path: str = None, fix: bool = True) -> str:
+        """
+        Run ruff linter on the workspace or a specific file.
+        Automatically fixes issues when fix=True.
+
+        Args:
+            file_path: Optional relative path to lint (default: entire workspace)
+            fix: Whether to auto-fix issues (default: True)
+
+        Returns:
+            Linter output string
+        """
+        target = str(self.workspace_root / file_path) if file_path else str(self.workspace_root)
+        cmd = ["ruff", "check"]
+        if fix:
+            cmd.append("--fix")
+        cmd.append(target)
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                cwd=str(self.workspace_root),
+            )
+            output = ""
+            if result.stdout:
+                output += result.stdout
+            if result.stderr:
+                output += f"\n{result.stderr}" if output else result.stderr
+
+            if result.returncode == 0:
+                return output.strip() if output.strip() else "Linter: all checks passed"
+            else:
+                return f"Linter issues found:\n{output.strip()}"
+        except FileNotFoundError:
+            return "Error: ruff not installed. Install with: pip install ruff"
+        except subprocess.TimeoutExpired:
+            return "Error: Linter timed out after 60 seconds"
+        except Exception as e:
+            return f"Error running linter: {e}"
+
     # ---- Git tools ----
 
     def git_status(self) -> str:
@@ -618,6 +664,26 @@ def get_tool_schemas():
                         "file_pattern": {"type": "string", "description": "File pattern (default: '*.py')"}
                     },
                     "required": ["pattern"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "run_linter",
+                "description": "Run ruff linter on the workspace or a specific file. Auto-fixes issues by default.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "file_path": {
+                            "type": "string",
+                            "description": "Optional relative path to lint (default: entire workspace)"
+                        },
+                        "fix": {
+                            "type": "boolean",
+                            "description": "Whether to auto-fix issues (default: true)"
+                        }
+                    }
                 }
             }
         },

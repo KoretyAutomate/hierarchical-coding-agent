@@ -16,6 +16,10 @@ echo ""
 # Activate conda environment
 source /home/korety/miniconda3/bin/activate podcast_flow
 
+# Set CUDA library path for CUDA 13 (vLLM expects CUDA 12)
+export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+export CUDA_HOME=/usr/local/cuda
+
 # Start vLLM server with DeepSeek-R1
 python3 -m vllm.entrypoints.openai.api_server \
     --model deepseek-ai/DeepSeek-R1-Distill-Qwen-32B \

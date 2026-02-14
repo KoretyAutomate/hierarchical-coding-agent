@@ -27,7 +27,7 @@ class CodingTools:
         workspace_root: str,
         use_sandbox: bool = False,
         sandbox_config: Optional[Dict[str, Any]] = None,
-        enable_diff_review: bool = True,
+        enable_diff_review: bool = False,
         allowed_commands: Optional[list] = None,
         backup_callback=None,
     ):
